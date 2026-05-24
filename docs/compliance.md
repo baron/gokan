@@ -17,6 +17,11 @@ Practical requirements:
 - Track model checksums and license notice metadata in catalog/profile files;
   keep neural network binaries out of git unless a release policy explicitly
   allows them.
+- Treat profile selection in the app as metadata/path resolution only. It is
+  not distribution of a model file unless a release also ships the file or a
+  populated download mechanism.
+- Review notices, checksums, and source URLs before any release includes a
+  populated catalog, bundled model, or first-party download flow.
 - Do not imply upstream endorsement of the fork or app.
 - Prefer keeping the KataGo fork permissively licensed if upstreaming patches is
   a goal.

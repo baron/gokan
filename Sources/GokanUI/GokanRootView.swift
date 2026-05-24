@@ -4,6 +4,7 @@ import Foundation
 import SwiftUI
 import GokanCore
 import GokanEngine
+import GokanModels
 
 public struct GokanRootView: View {
     private let initialSGFText: String?
@@ -11,9 +12,17 @@ public struct GokanRootView: View {
     @State private var didLoadInitialSGFText = false
 
     @MainActor
-    public init(initialSGFText: String? = nil, forceMockEngine: Bool = false) {
+    public init(
+        initialSGFText: String? = nil,
+        forceMockEngine: Bool = false,
+        modelCatalog: GokanModelCatalog = .empty
+    ) {
         self.initialSGFText = initialSGFText
-        _model = State(initialValue: forceMockEngine ? GokanAppModel(engine: MockAnalysisEngine()) : GokanAppModel())
+        _model = State(
+            initialValue: forceMockEngine
+                ? GokanAppModel(engine: MockAnalysisEngine(), modelCatalog: modelCatalog)
+                : GokanAppModel(modelCatalog: modelCatalog)
+        )
     }
 
     public var body: some View {
@@ -178,20 +187,19 @@ private struct SidebarView: View {
                             .tag(kind)
                     }
                 }
+                .accessibilityIdentifier("gokan.engine-picker")
 
                 if model.engineKind == .kataGo {
                     #if os(macOS)
                     TextField("Executable path", text: $model.kataGoSettings.executablePath)
                         .textFieldStyle(.roundedBorder)
-                    TextField("Model path", text: $model.kataGoSettings.modelPath)
-                        .textFieldStyle(.roundedBorder)
-                    TextField("Config path", text: $model.kataGoSettings.configPath)
-                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("gokan.katago-executable-path")
                     #endif
                 }
 
                 Label(model.engineStatus.message, systemImage: engineStatusSystemImage)
                     .foregroundStyle(engineStatusColor)
+                    .accessibilityIdentifier("gokan.engine-status")
 
                 Button {
                     Task {
@@ -199,6 +207,66 @@ private struct SidebarView: View {
                     }
                 } label: {
                     Label("Analyze Now", systemImage: "play.circle")
+                }
+                .accessibilityIdentifier("gokan.analyze-now")
+            }
+
+            if model.engineKind == .kataGo {
+                Section("KataGo Model") {
+                    #if os(macOS)
+                    TextField("Manual model path", text: $model.kataGoSettings.modelPath)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("gokan.katago-manual-model-path")
+                    TextField("Manual config path", text: $model.kataGoSettings.configPath)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("gokan.katago-manual-config-path")
+                    #endif
+
+                    Text("Manual model paths override selected model profiles.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Picker("Model profile", selection: $model.kataGoModelSettings.selectedProfileID) {
+                        Text("Manual paths / no profile")
+                            .tag("")
+                        ForEach(model.modelCatalog.profiles) { profile in
+                            Text(profile.displayName)
+                                .tag(profile.id)
+                        }
+                        if let unknownProfileID {
+                            Text("Unknown profile (\(unknownProfileID))")
+                                .tag(unknownProfileID)
+                        }
+                    }
+                    .accessibilityIdentifier("gokan.model-profile-picker")
+
+                    if model.modelCatalog.profiles.isEmpty {
+                        Text("No model profiles are bundled in this build.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    TextField("Cache root", text: $model.kataGoModelSettings.cacheRootPath)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("gokan.model-cache-root")
+
+                    Label(model.kataGoModelStatus.message, systemImage: modelStatusSystemImage)
+                        .foregroundStyle(modelStatusColor)
+                        .accessibilityIdentifier("gokan.katago-model-status")
+
+                    Button {
+                        Task {
+                            await model.verifySelectedKataGoModelChecksum()
+                        }
+                    } label: {
+                        Label("Verify Checksum", systemImage: "checkmark.seal")
+                    }
+                    .disabled(model.canVerifySelectedKataGoModelChecksum == false)
+                    .accessibilityIdentifier("gokan.model-verify-checksum")
+
+                    if let selectedProfile = model.selectedKataGoModelProfile {
+                        modelProfileDetails(for: selectedProfile)
+                    }
                 }
             }
 
@@ -384,6 +452,99 @@ private struct SidebarView: View {
         case .error:
             .red
         }
+    }
+
+    private var unknownProfileID: String? {
+        let profileID = model.kataGoModelSettings.selectedProfileID.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard profileID.isEmpty == false,
+              model.modelCatalog.profile(id: profileID) == nil else {
+            return nil
+        }
+        return profileID
+    }
+
+    private var modelStatusSystemImage: String {
+        switch model.kataGoModelStatus {
+        case .profileReady, .checksumVerified:
+            "checkmark.circle"
+        case .notSelected, .manualPath:
+            "circle"
+        case .profileUnavailable, .missingCacheRoot, .missingCachedModel, .missingCachedConfig, .missingConfigPath, .checksumUnavailable:
+            "exclamationmark.triangle"
+        case .checksumMismatch, .verificationFailed:
+            "xmark.octagon"
+        }
+    }
+
+    private var modelStatusColor: Color {
+        switch model.kataGoModelStatus {
+        case .profileReady, .checksumVerified:
+            .green
+        case .notSelected, .manualPath:
+            .secondary
+        case .profileUnavailable, .missingCacheRoot, .missingCachedModel, .missingCachedConfig, .missingConfigPath, .checksumUnavailable:
+            .orange
+        case .checksumMismatch, .verificationFailed:
+            .red
+        }
+    }
+
+    @ViewBuilder
+    private func modelProfileDetails(for profile: GokanModelProfile) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(profile.displayName)
+                .font(.headline)
+            if let description = profile.description, description.isEmpty == false {
+                Text(description)
+                    .foregroundStyle(.secondary)
+            }
+            detailRow("Model", value: profile.modelFileName)
+            detailRow("Config", value: profile.defaultConfigFileName ?? "Manual config required")
+            if let expectedByteCount = profile.expectedByteCount {
+                detailRow("Size", value: byteCountTitle(for: expectedByteCount))
+            }
+            detailRow("License", value: profile.license.name)
+            if profile.supportedBoardSizes.isEmpty == false {
+                detailRow("Boards", value: boardSizesTitle(for: profile.supportedBoardSizes))
+            }
+            if profile.deviceSuitability.isEmpty == false {
+                detailRow("Devices", value: deviceSuitabilityTitle(for: profile.deviceSuitability))
+            }
+        }
+        .font(.caption)
+        .accessibilityIdentifier("gokan.model-profile-details")
+    }
+
+    private func detailRow(_ title: String, value: String) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 12)
+            Text(value)
+                .multilineTextAlignment(.trailing)
+        }
+    }
+
+    private func byteCountTitle(for byteCount: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: byteCount, countStyle: .file)
+    }
+
+    private func boardSizesTitle(for boardSizes: [GokanModelBoardSize]) -> String {
+        boardSizes
+            .map { "\($0.width)x\($0.height)" }
+            .joined(separator: ", ")
+    }
+
+    private func deviceSuitabilityTitle(for suitability: [GokanDeviceSuitability]) -> String {
+        suitability
+            .map { item in
+                let title = "\(item.platform.rawValue) \(item.tier.rawValue.capitalized)"
+                if let note = item.note, note.isEmpty == false {
+                    return "\(title): \(note)"
+                }
+                return title
+            }
+            .joined(separator: ", ")
     }
 
     private func diagnosticsOutcomeTitle(for outcome: AnalysisRunOutcome) -> String {

@@ -58,6 +58,21 @@ KataGo's Metal backend requires CMake, Ninja, Xcode, and Swift/C++ interop.
 The Swift package builds the shared core, model metadata/cache helpers, KataGo
 analysis boundary, SwiftUI shell, and macOS executable target.
 
+### Model profiles and cache
+
+Model profiles are metadata only. Gokan does not download or bundle KataGo
+neural network files in this repository. When a catalog-enabled build selects a
+profile, place user-provided files under:
+
+```text
+<cacheRoot>/models/<modelFileName>
+<cacheRoot>/configs/<defaultConfigFileName>
+```
+
+The app can show local cache readiness and verify SHA-256 checksums when profile
+metadata includes one. Manual KataGo model/config paths remain available and
+take precedence over selected profiles.
+
 Run the macOS development app:
 
 ```sh

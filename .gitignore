@@ -5,6 +5,7 @@ build/
 dist/
 app/Gokan.xcodeproj/
 app/Local.xcconfig
+prompt-exports/
 
 # Local engine checkouts and build products can be large and branch-specific.
 engine/KataGo/

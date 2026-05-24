@@ -92,5 +92,7 @@ profiles, license/checksum metadata, and this cache convention:
 ```
 
 It does not download, bundle, or check in neural network files. `GokanUI`
-resolves selected profiles to ordinary `KataGoEngineConfiguration` URLs so the
-engine process boundary remains independent of catalog details.
+surfaces profile selection, cache root configuration, readiness status, and
+manual checksum verification in the sidebar. Profile selection only resolves
+local files to ordinary `KataGoEngineConfiguration` URLs, so the engine process
+boundary remains independent of catalog details and no fetch behavior is implied.

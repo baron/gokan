@@ -45,7 +45,7 @@ let package = Package(
         ),
         .testTarget(
             name: "GokanUITests",
-            dependencies: ["GokanUI", "GokanCore", "GokanEngine"]
+            dependencies: ["GokanUI", "GokanCore", "GokanEngine", "GokanModels"]
         ),
     ]
 )
