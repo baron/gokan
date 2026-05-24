@@ -36,6 +36,64 @@ func serializesRectangularBoardSizeAsSgf() throws {
 }
 
 @Test
+func parsesRootMetadataIntoGameRecord() throws {
+    let document = try SGFDocument.parse(
+        "(;GM[1]FF[4]SZ[9]GN[Game 1]EV[Test Event]DT[2026-05-25]PB[Black Name]PW[White Name]KM[6.5]RE[B+R];B[ee])"
+    )
+    let game = try document.gameRecord()
+
+    let metadata = GameMetadata(
+        blackPlayerName: "Black Name",
+        whitePlayerName: "White Name",
+        komi: "6.5",
+        result: "B+R",
+        gameName: "Game 1",
+        event: "Test Event",
+        date: "2026-05-25"
+    )
+    #expect(document.metadata == metadata)
+    #expect(game.metadata == metadata)
+}
+
+@Test
+func serializesGameMetadataInStableOrder() throws {
+    let document = SGFDocument(
+        boardSize: BoardSize(width: 9, height: 9),
+        moves: [PlayedMove(color: .black, move: .play(BoardPoint(x: 4, y: 4)))],
+        metadata: GameMetadata(
+            blackPlayerName: "Black Name",
+            whitePlayerName: "White Name",
+            komi: "6.5",
+            result: "B+R",
+            gameName: "Game 1",
+            event: "Test Event",
+            date: "2026-05-25"
+        )
+    )
+
+    let sgf = try document.serialize()
+
+    #expect(
+        sgf
+            == "(;GM[1]FF[4]CA[UTF-8]AP[Gokan]SZ[9]GN[Game 1]EV[Test Event]DT[2026-05-25]PB[Black Name]PW[White Name]KM[6.5]RE[B+R];B[ee])\n"
+    )
+}
+
+@Test
+func metadataValuesEscapeAndUnescapeSgfCharacters() throws {
+    let document = SGFDocument(
+        boardSize: BoardSize(width: 9, height: 9),
+        metadata: GameMetadata(gameName: #"Title \ One ] Two"#)
+    )
+
+    let sgf = try document.serialize()
+    let parsed = try SGFDocument.parse(sgf)
+
+    #expect(sgf == #"(;GM[1]FF[4]CA[UTF-8]AP[Gokan]SZ[9]GN[Title \\ One \] Two])"# + "\n")
+    #expect(parsed.metadata.gameName == #"Title \ One ] Two"#)
+}
+
+@Test
 func parsesSimpleSgfIntoGameRecord() throws {
     let document = try SGFDocument.parse("(;GM[1]FF[4]SZ[9];B[ee];W[ef];B[])")
     let game = try document.gameRecord()

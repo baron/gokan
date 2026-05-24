@@ -10,19 +10,38 @@ final class GokanSmokeUITests: XCTestCase {
     @MainActor
     func testLaunchLoadsSGFAndShowsAnalysis() throws {
         let app = XCUIApplication()
-        app.launchEnvironment["GOKAN_UI_TEST_SGF"] = "(;GM[1]FF[4]SZ[9];B[ee])"
+        app.launchEnvironment["GOKAN_UI_TEST_SGF"] = "(;GM[1]FF[4]SZ[9]PB[Smoke Black]PW[Smoke White]KM[6.5];B[ee])"
         app.launchEnvironment["GOKAN_UI_TEST_FORCE_MOCK_ENGINE"] = "1"
         app.launch()
 
         let moveCount = app.staticTexts["gokan.move-count"]
         XCTAssertTrue(moveCount.waitForExistence(timeout: 30))
         XCTAssertTrue(waitFor(moveCount, toContain: "Move 1 / 1"))
+        XCTAssertTrue(app.textFields["gokan.metadata.black-player"].waitForExistence(timeout: 30))
+        XCTAssertEqual(app.textFields["gokan.metadata.black-player"].value as? String, "Smoke Black")
         let diagnosticsStatus = app.staticTexts["gokan.analysis-diagnostics-status"]
-        XCTAssertTrue(diagnosticsStatus.waitForExistence(timeout: 30))
+        XCTAssertTrue(scrollUntilExists(diagnosticsStatus, in: app))
         XCTAssertTrue(waitFor(diagnosticsStatus, toContain: "Succeeded"))
         let completedVisits = app.staticTexts["gokan.analysis-diagnostics-completed-visits"]
-        XCTAssertTrue(completedVisits.waitForExistence(timeout: 30))
+        XCTAssertTrue(scrollUntilExists(completedVisits, in: app))
         XCTAssertTrue(app.buttons["Play Candidate"].waitForExistence(timeout: 30))
+    }
+
+    @MainActor
+    private func scrollUntilExists(_ element: XCUIElement, in app: XCUIApplication, attempts: Int = 6) -> Bool {
+        if element.waitForExistence(timeout: 3) {
+            return true
+        }
+
+        let scrollTarget = app.collectionViews.firstMatch.exists ? app.collectionViews.firstMatch : app
+        for _ in 0..<attempts {
+            scrollTarget.swipeUp()
+            if element.waitForExistence(timeout: 2) {
+                return true
+            }
+        }
+
+        return false
     }
 
     @MainActor

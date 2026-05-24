@@ -4,6 +4,14 @@ import Testing
 @testable import GokanCore
 
 @Test
+func defaultGameRecordMetadataIsEmpty() {
+    let game = GameRecord()
+
+    #expect(game.metadata == .empty)
+    #expect(game.metadata.isEmpty)
+}
+
+@Test
 func steppingBackwardRestoresPreviousBoard() throws {
     var game = GameRecord(boardSize: BoardSize(width: 9, height: 9))
     try game.play(.play(BoardPoint(x: 4, y: 4)))
@@ -86,6 +94,29 @@ func selectingVariationUpdatesBoardAndLine() throws {
     #expect(game.moves[1].move == .play(BoardPoint(x: 5, y: 5)))
     #expect(game.board[BoardPoint(x: 4, y: 5)] == nil)
     #expect(game.board[BoardPoint(x: 5, y: 5)] == .white)
+}
+
+@Test
+func metadataSurvivesReviewNavigationAndVariationSelection() throws {
+    let metadata = GameMetadata(
+        blackPlayerName: "Black",
+        whitePlayerName: "White",
+        komi: "6.5",
+        result: "W+2.5",
+        gameName: "Review",
+        event: "Testing",
+        date: "2026-05-25"
+    )
+    var game = try SGFDocument.parse("(;GM[1]FF[4]SZ[9];B[ee](;W[ef])(;W[ff]))").gameRecord()
+    game.metadata = metadata
+
+    try game.stepBackward()
+    try game.selectVariation(at: 1)
+    try game.goToStart()
+    try game.goToEnd()
+
+    #expect(game.metadata == metadata)
+    #expect(game.moves[1].move == .play(BoardPoint(x: 5, y: 5)))
 }
 
 @Test

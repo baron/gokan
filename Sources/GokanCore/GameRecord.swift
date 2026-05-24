@@ -63,24 +63,31 @@ public struct GameRecord: Hashable, Sendable {
     public private(set) var nextPlayer: StoneColor
     public private(set) var currentMoveIndex: Int
     public private(set) var rootChildren: [GameTreeNode]
+    public var metadata: GameMetadata
 
     private var selectedLinePath: [Int]
     private var simpleKoReferenceBoard: GoBoard?
 
-    public init(boardSize: BoardSize = .standard) {
+    public init(boardSize: BoardSize = .standard, metadata: GameMetadata = .empty) {
         self.board = GoBoard(size: boardSize)
         self.nextPlayer = .black
         self.currentMoveIndex = 0
         self.rootChildren = []
+        self.metadata = metadata
         self.selectedLinePath = []
         self.simpleKoReferenceBoard = nil
     }
 
-    public init(boardSize: BoardSize = .standard, rootChildren: [GameTreeNode]) throws {
+    public init(
+        boardSize: BoardSize = .standard,
+        rootChildren: [GameTreeNode],
+        metadata: GameMetadata = .empty
+    ) throws {
         self.board = GoBoard(size: boardSize)
         self.nextPlayer = .black
         self.currentMoveIndex = 0
         self.rootChildren = rootChildren
+        self.metadata = metadata
         self.selectedLinePath = []
         self.simpleKoReferenceBoard = nil
         self.selectedLinePath = selectedLineFollowingFirstChildren(from: [])

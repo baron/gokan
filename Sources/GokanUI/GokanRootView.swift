@@ -62,6 +62,30 @@ private struct SidebarView: View {
                     .accessibilityIdentifier("gokan.next-player")
             }
 
+            Section("Game Info") {
+                TextField("Game name", text: metadataBinding(\.gameName))
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("gokan.metadata.game-name")
+                TextField("Event", text: metadataBinding(\.event))
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("gokan.metadata.event")
+                TextField("Date", text: metadataBinding(\.date))
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("gokan.metadata.date")
+                TextField("Black player", text: metadataBinding(\.blackPlayerName))
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("gokan.metadata.black-player")
+                TextField("White player", text: metadataBinding(\.whitePlayerName))
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("gokan.metadata.white-player")
+                TextField("Komi", text: metadataBinding(\.komi))
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("gokan.metadata.komi")
+                TextField("Result", text: metadataBinding(\.result))
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("gokan.metadata.result")
+            }
+
             Section("Controls") {
                 Button {
                     model.newGame()
@@ -300,6 +324,19 @@ private struct SidebarView: View {
         if case .failure(let error) = result {
             model.documentError = error.localizedDescription
         }
+    }
+
+    private func metadataBinding(_ keyPath: WritableKeyPath<GameMetadata, String>) -> Binding<String> {
+        Binding(
+            get: {
+                model.gameMetadata[keyPath: keyPath]
+            },
+            set: { value in
+                var metadata = model.gameMetadata
+                metadata[keyPath: keyPath] = value
+                model.gameMetadata = metadata
+            }
+        )
     }
 
     private func moveListTitle(for item: GameMoveListItem) -> String {

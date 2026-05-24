@@ -13,20 +13,32 @@ public enum SGFDocumentError: Error, Equatable, Sendable {
 public struct SGFDocument: Hashable, Sendable {
     public var boardSize: BoardSize
     public var rootChildren: [GameTreeNode]
+    public var metadata: GameMetadata
 
-    public init(boardSize: BoardSize = .standard, moves: [PlayedMove] = []) {
+    public init(
+        boardSize: BoardSize = .standard,
+        moves: [PlayedMove] = [],
+        metadata: GameMetadata = .empty
+    ) {
         self.boardSize = boardSize
         self.rootChildren = Self.chain(from: moves)
+        self.metadata = metadata
     }
 
-    public init(boardSize: BoardSize = .standard, rootChildren: [GameTreeNode]) {
+    public init(
+        boardSize: BoardSize = .standard,
+        rootChildren: [GameTreeNode],
+        metadata: GameMetadata = .empty
+    ) {
         self.boardSize = boardSize
         self.rootChildren = rootChildren
+        self.metadata = metadata
     }
 
     public init(game: GameRecord) {
         self.boardSize = game.board.size
         self.rootChildren = game.rootChildren
+        self.metadata = game.metadata
     }
 
     public var moves: [PlayedMove] {
@@ -41,11 +53,12 @@ public struct SGFDocument: Hashable, Sendable {
             expectedPlayer: nil,
             moveNumber: 1
         )
-        return try GameRecord(boardSize: boardSize, rootChildren: rootChildren)
+        return try GameRecord(boardSize: boardSize, rootChildren: rootChildren, metadata: metadata)
     }
 
     public func serialize() throws -> String {
         var output = "(;GM[1]FF[4]CA[UTF-8]AP[Gokan]SZ[\(serializedBoardSize)]"
+        output += serializeMetadata()
         output += try serializeChildren(rootChildren)
         output += ")\n"
         return output
@@ -67,9 +80,29 @@ public struct SGFDocument: Hashable, Sendable {
         }
 
         let size = try parseBoardSize(from: tree.properties.first(where: { $0.identifier == "SZ" })?.values.first)
-        let document = SGFDocument(boardSize: size, rootChildren: try nodes(from: tree))
+        let document = SGFDocument(
+            boardSize: size,
+            rootChildren: try nodes(from: tree),
+            metadata: metadata(from: tree.rootProperties)
+        )
         _ = try document.gameRecord()
         return document
+    }
+
+    private static func metadata(from rootProperties: [SGFProperty]) -> GameMetadata {
+        GameMetadata(
+            blackPlayerName: rootValue("PB", in: rootProperties),
+            whitePlayerName: rootValue("PW", in: rootProperties),
+            komi: rootValue("KM", in: rootProperties),
+            result: rootValue("RE", in: rootProperties),
+            gameName: rootValue("GN", in: rootProperties),
+            event: rootValue("EV", in: rootProperties),
+            date: rootValue("DT", in: rootProperties)
+        )
+    }
+
+    private static func rootValue(_ identifier: String, in properties: [SGFProperty]) -> String {
+        properties.first { $0.identifier == identifier }?.values.first ?? ""
     }
 
     private static func parseBoardSize(from value: String?) throws -> BoardSize {
@@ -217,14 +250,46 @@ public struct SGFDocument: Hashable, Sendable {
         return output
     }
 
+    private func serializeMetadata() -> String {
+        [
+            ("GN", metadata.gameName),
+            ("EV", metadata.event),
+            ("DT", metadata.date),
+            ("PB", metadata.blackPlayerName),
+            ("PW", metadata.whitePlayerName),
+            ("KM", metadata.komi),
+            ("RE", metadata.result),
+        ]
+        .filter { $0.1.isEmpty == false }
+        .map { "\($0.0)[\(escapedPropertyValue($0.1))]" }
+        .joined()
+    }
+
+    private func escapedPropertyValue(_ value: String) -> String {
+        value.reduce(into: "") { result, character in
+            if character == "\\" || character == "]" {
+                result.append("\\")
+            }
+            result.append(character)
+        }
+    }
+
     private var serializedBoardSize: String {
         boardSize.width == boardSize.height ? "\(boardSize.width)" : "\(boardSize.width):\(boardSize.height)"
     }
 }
 
 private struct ParsedSGFTree: Hashable, Sendable {
-    var properties: [SGFProperty]
+    var nodes: [[SGFProperty]]
     var variations: [ParsedSGFTree]
+
+    var rootProperties: [SGFProperty] {
+        nodes.first ?? []
+    }
+
+    var properties: [SGFProperty] {
+        nodes.flatMap { $0 }
+    }
 }
 
 private struct SGFProperty: Hashable, Sendable {
@@ -247,9 +312,9 @@ private struct SGFParser {
             throw SGFDocumentError.missingGameTree
         }
 
-        var properties: [SGFProperty] = []
+        var nodes: [[SGFProperty]] = []
         while consume(";") {
-            properties.append(contentsOf: parseNodeProperties())
+            nodes.append(parseNodeProperties())
             skipWhitespace()
         }
 
@@ -263,7 +328,7 @@ private struct SGFParser {
             throw SGFDocumentError.missingGameTree
         }
 
-        return ParsedSGFTree(properties: properties, variations: variations)
+        return ParsedSGFTree(nodes: nodes, variations: variations)
     }
 
     mutating func isAtEnd() -> Bool {

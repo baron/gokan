@@ -178,6 +178,22 @@ public final class GokanAppModel {
         }
     }
 
+    public var gameMetadata: GameMetadata {
+        get {
+            game.metadata
+        }
+        set {
+            guard game.metadata != newValue else {
+                return
+            }
+
+            game.metadata = newValue
+            sgfText = ""
+            exportedSGFText = ""
+            documentError = nil
+        }
+    }
+
     public func play(at point: BoardPoint) {
         do {
             try game.play(.play(point))

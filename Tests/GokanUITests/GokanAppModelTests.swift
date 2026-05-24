@@ -114,6 +114,68 @@ func exportSGFTextSerializesCurrentGame() throws {
 
 @MainActor
 @Test
+func loadingSGFTextExposesGameMetadata() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+
+    model.loadSGFText("(;GM[1]FF[4]SZ[9]GN[Title]EV[Event]DT[2026-05-25]PB[Black]PW[White]KM[6.5]RE[B+R];B[ee])")
+
+    #expect(model.gameMetadata.gameName == "Title")
+    #expect(model.gameMetadata.event == "Event")
+    #expect(model.gameMetadata.date == "2026-05-25")
+    #expect(model.gameMetadata.blackPlayerName == "Black")
+    #expect(model.gameMetadata.whitePlayerName == "White")
+    #expect(model.gameMetadata.komi == "6.5")
+    #expect(model.gameMetadata.result == "B+R")
+    #expect(model.game.board[BoardPoint(x: 4, y: 4)] == .black)
+    #expect(model.documentError == nil)
+}
+
+@MainActor
+@Test
+func editingGameMetadataUpdatesExportWithoutInvalidatingAnalysis() async throws {
+    let candidatePoint = BoardPoint(x: 3, y: 3)
+    let model = GokanAppModel(engine: ScriptedAnalysisEngine(snapshots: [snapshot(with: [candidatePoint])]))
+    model.loadSGFText("(;GM[1]FF[4]SZ[9]PB[Old Black];B[ee])")
+    model.exportedSGFText = try model.exportSGFText()
+    await model.analyze()
+    let originalAnalysis = try #require(model.analysis)
+    let originalDiagnostics = try #require(model.analysisDiagnostics)
+    let originalPositionVersion = model.positionVersion
+    let originalAnalysisRequestVersion = model.analysisRequestVersion
+
+    model.documentError = "stale error"
+    var metadata = model.gameMetadata
+    metadata.blackPlayerName = "New Black"
+    metadata.whitePlayerName = "White ] Player"
+    metadata.komi = "6.5"
+    model.gameMetadata = metadata
+    let exported = try model.exportSGFText()
+
+    #expect(model.gameMetadata.blackPlayerName == "New Black")
+    #expect(exported == "(;GM[1]FF[4]CA[UTF-8]AP[Gokan]SZ[9]PB[New Black]PW[White \\] Player]KM[6.5];B[ee])\n")
+    #expect(model.sgfText.isEmpty)
+    #expect(model.documentError == nil)
+    #expect(model.analysis == originalAnalysis)
+    #expect(model.analysisDiagnostics == originalDiagnostics)
+    #expect(model.selectedAnalysisCandidatePoint == candidatePoint)
+    #expect(model.positionVersion == originalPositionVersion)
+    #expect(model.analysisRequestVersion == originalAnalysisRequestVersion)
+}
+
+@MainActor
+@Test
+func newGameResetsGameMetadata() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    model.loadSGFText("(;GM[1]FF[4]SZ[9]PB[Black]PW[White];B[ee])")
+
+    model.newGame(boardSize: BoardSize(width: 9, height: 9))
+
+    #expect(model.gameMetadata == .empty)
+    #expect(model.game.metadata == .empty)
+}
+
+@MainActor
+@Test
 func loadSGFDataImportsUTF8Game() {
     let model = GokanAppModel(engine: SilentAnalysisEngine())
     model.play(at: BoardPoint(x: 0, y: 0))
