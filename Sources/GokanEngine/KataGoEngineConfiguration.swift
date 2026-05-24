@@ -13,17 +13,3 @@ public struct KataGoEngineConfiguration: Hashable, Sendable {
         self.configURL = configURL
     }
 }
-
-public struct KataGoAnalysisEngine: GoAnalysisEngine {
-    public let configuration: KataGoEngineConfiguration
-
-    public init(configuration: KataGoEngineConfiguration) {
-        self.configuration = configuration
-    }
-
-    public func analyze(_ request: AnalysisRequest) async throws -> AsyncThrowingStream<AnalysisSnapshot, Error> {
-        // The process boundary is intentionally a placeholder until the JSON
-        // analysis protocol adapter can be tested against a built Metal binary.
-        try await MockAnalysisEngine().analyze(request)
-    }
-}
