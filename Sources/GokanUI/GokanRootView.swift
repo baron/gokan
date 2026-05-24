@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 
+import Foundation
 import SwiftUI
 import GokanCore
 import GokanEngine
@@ -18,11 +19,17 @@ public struct GokanRootView: View {
         .task(id: model.analysisRequestVersion) {
             await model.analyze()
         }
+        .onOpenURL { url in
+            model.loadSGFFile(at: url)
+        }
     }
 }
 
 private struct SidebarView: View {
     @Bindable var model: GokanAppModel
+    @State private var isImportingSGF = false
+    @State private var isExportingSGF = false
+    @State private var exportDocument = SGFFileDocument()
 
     var body: some View {
         List {
@@ -86,6 +93,23 @@ private struct SidebarView: View {
             }
 
             Section("SGF") {
+                Button {
+                    isImportingSGF = true
+                } label: {
+                    Label("Open SGF", systemImage: "folder")
+                }
+
+                Button {
+                    do {
+                        exportDocument = SGFFileDocument(text: try model.exportSGFText())
+                        isExportingSGF = true
+                    } catch {
+                        model.documentError = String(describing: error)
+                    }
+                } label: {
+                    Label("Save SGF", systemImage: "square.and.arrow.down")
+                }
+
                 TextEditor(text: $model.sgfText)
                     .font(.system(.caption, design: .monospaced))
                     .frame(minHeight: 120)
@@ -122,6 +146,37 @@ private struct SidebarView: View {
         }
         .navigationTitle("Gokan")
         .listStyle(.sidebar)
+        .fileImporter(
+            isPresented: $isImportingSGF,
+            allowedContentTypes: [.sgf, .plainText],
+            allowsMultipleSelection: false,
+            onCompletion: importSGF(result:)
+        )
+        .fileExporter(
+            isPresented: $isExportingSGF,
+            document: exportDocument,
+            contentType: .sgf,
+            defaultFilename: "Gokan Game",
+            onCompletion: exportSGF(result:)
+        )
+    }
+
+    private func importSGF(result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else {
+                return
+            }
+            model.loadSGFFile(at: url)
+        case .failure(let error):
+            model.documentError = error.localizedDescription
+        }
+    }
+
+    private func exportSGF(result: Result<URL, Error>) {
+        if case .failure(let error) = result {
+            model.documentError = error.localizedDescription
+        }
     }
 
     private var engineStatusSystemImage: String {

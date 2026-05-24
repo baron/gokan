@@ -113,6 +113,65 @@ func exportSGFTextSerializesCurrentGame() throws {
 
 @MainActor
 @Test
+func loadSGFDataImportsUTF8Game() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    model.play(at: BoardPoint(x: 0, y: 0))
+
+    model.loadSGFData(Data("(;GM[1]FF[4]SZ[9];B[ee];W[])".utf8))
+
+    #expect(model.game.board.size == BoardSize(width: 9, height: 9))
+    #expect(model.game.moves.count == 2)
+    #expect(model.game.board[BoardPoint(x: 4, y: 4)] == .black)
+    #expect(model.game.moves[1].move == .pass)
+    #expect(model.documentError == nil)
+}
+
+@MainActor
+@Test
+func loadSGFDataRejectsInvalidEncodingAndPreservesGame() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    model.play(at: BoardPoint(x: 0, y: 0))
+    let originalGame = model.game
+
+    model.loadSGFData(Data([0xFF, 0xFE, 0x00]))
+
+    #expect(model.game == originalGame)
+    #expect(model.documentError == SGFFileDocumentError.unsupportedEncoding.localizedDescription)
+}
+
+@MainActor
+@Test
+func loadSGFFileImportsGameFromURL() throws {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    let fileURL = FileManager.default.temporaryDirectory
+        .appending(path: "gokan-test-\(UUID().uuidString)")
+        .appendingPathExtension("sgf")
+    try Data("(;GM[1]FF[4]SZ[9];B[ee])".utf8).write(to: fileURL)
+    defer {
+        try? FileManager.default.removeItem(at: fileURL)
+    }
+
+    model.loadSGFFile(at: fileURL)
+
+    #expect(model.game.board[BoardPoint(x: 4, y: 4)] == .black)
+    #expect(model.documentError == nil)
+}
+
+@MainActor
+@Test
+func exportSGFDataSerializesCurrentGameAsUTF8() throws {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    model.newGame(boardSize: BoardSize(width: 9, height: 9))
+    model.play(at: BoardPoint(x: 4, y: 4))
+
+    let data = try model.exportSGFData()
+
+    #expect(String(data: data, encoding: .utf8) == "(;GM[1]FF[4]CA[UTF-8]AP[Gokan]SZ[9];B[ee])\n")
+    #expect(model.documentError == nil)
+}
+
+@MainActor
+@Test
 func staleAnalysisDoesNotOverwriteNewerPosition() async throws {
     let engine = ControlledAnalysisEngine()
     let model = GokanAppModel(engine: engine)

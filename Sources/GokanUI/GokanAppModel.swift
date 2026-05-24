@@ -153,12 +153,40 @@ public final class GokanAppModel {
         }
     }
 
+    public func loadSGFData(_ data: Data) {
+        do {
+            let document = try SGFFileDocument(data: data)
+            loadSGFText(document.text)
+        } catch {
+            documentError = error.localizedDescription
+        }
+    }
+
+    public func loadSGFFile(at url: URL) {
+        let isSecurityScoped = url.startAccessingSecurityScopedResource()
+        defer {
+            if isSecurityScoped {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        do {
+            loadSGFData(try Data(contentsOf: url))
+        } catch {
+            documentError = error.localizedDescription
+        }
+    }
+
     @discardableResult
     public func exportSGFText() throws -> String {
         let text = try SGFDocument(game: game).serialize()
         exportedSGFText = text
         documentError = nil
         return text
+    }
+
+    public func exportSGFData() throws -> Data {
+        try SGFFileDocument(text: exportSGFText()).data()
     }
 
     public func analyze() async {
