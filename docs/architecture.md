@@ -27,6 +27,14 @@ GokanModels
   Model catalog, download verification, cache management, device profiles
 ```
 
+The current first implementation slice is a root Swift package with:
+
+- `GokanCore`: board state, rules, moves, and game record primitives;
+- `GokanEngine`: analysis request/result types plus mock and placeholder
+  KataGo engine boundaries;
+- `GokanUI`: shared SwiftUI board and analysis shell;
+- `GokanMacApp`: runnable macOS development executable.
+
 ## Engine Boundary
 
 Start with a process boundary on macOS:

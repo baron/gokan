@@ -49,11 +49,20 @@ scripts/          Build, benchmark, and packaging helpers
 
 ```sh
 scripts/check-toolchain.sh
+swift test
 scripts/fetch-katago.sh
 scripts/build-katago-metal.sh
 ```
 
 KataGo's Metal backend requires CMake, Ninja, Xcode, and Swift/C++ interop.
+The Swift package builds the shared core, placeholder engine boundary, SwiftUI
+shell, and macOS executable target.
+
+Run the macOS development app:
+
+```sh
+swift run GokanMacApp
+```
 
 ## Licensing Posture
 
