@@ -114,3 +114,68 @@ func passMovesParticipateInCursorMovement() throws {
     #expect(game.currentMoveIndex == 2)
     #expect(game.nextPlayer == .black)
 }
+
+@Test
+func immediateSimpleKoRecaptureIsRejected() throws {
+    var game = try gameWithSimpleKoCapture()
+    let boardAfterCapture = game.board
+    let moveIndexAfterCapture = game.currentMoveIndex
+
+    #expect(throws: BoardError.simpleKo) {
+        try game.play(.play(BoardPoint(x: 2, y: 2)))
+    }
+
+    #expect(game.board == boardAfterCapture)
+    #expect(game.currentMoveIndex == moveIndexAfterCapture)
+    #expect(game.board[BoardPoint(x: 2, y: 1)] == .black)
+    #expect(game.board[BoardPoint(x: 2, y: 2)] == nil)
+}
+
+@Test
+func passesBreakSimpleKoRestriction() throws {
+    var game = try gameWithSimpleKoCapture()
+
+    try game.play(.pass)
+    try game.play(.pass)
+    try game.play(.play(BoardPoint(x: 2, y: 2)))
+
+    #expect(game.board[BoardPoint(x: 2, y: 2)] == .white)
+    #expect(game.board[BoardPoint(x: 2, y: 1)] == nil)
+}
+
+@Test
+func explicitMovesRejectSamePlayerAfterPass() throws {
+    var game = try gameWithSimpleKoCapture()
+    try game.play(PlayedMove(color: .white, move: .pass))
+
+    #expect(throws: BoardError.wrongPlayer(expected: .black, actual: .white)) {
+        try game.play(PlayedMove(color: .white, move: .play(BoardPoint(x: 2, y: 2))))
+    }
+}
+
+@Test
+func futureVariationPassDoesNotBreakSimpleKoAtParent() throws {
+    var game = try gameWithSimpleKoCapture()
+    try game.play(.pass)
+    try game.stepBackward()
+
+    #expect(throws: BoardError.simpleKo) {
+        try game.play(.play(BoardPoint(x: 2, y: 2)))
+    }
+
+    #expect(game.variationChoices.count == 1)
+}
+
+private func gameWithSimpleKoCapture() throws -> GameRecord {
+    var game = GameRecord(boardSize: BoardSize(width: 5, height: 5))
+    try game.play(.play(BoardPoint(x: 1, y: 2)))
+    try game.play(.play(BoardPoint(x: 2, y: 2)))
+    try game.play(.play(BoardPoint(x: 3, y: 2)))
+    try game.play(.play(BoardPoint(x: 1, y: 1)))
+    try game.play(.play(BoardPoint(x: 2, y: 3)))
+    try game.play(.play(BoardPoint(x: 3, y: 1)))
+    try game.play(.pass)
+    try game.play(.play(BoardPoint(x: 2, y: 0)))
+    try game.play(.play(BoardPoint(x: 2, y: 1)))
+    return game
+}

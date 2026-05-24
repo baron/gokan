@@ -49,6 +49,7 @@ public struct GameRecord: Hashable, Sendable {
     public private(set) var rootChildren: [GameTreeNode]
 
     private var selectedLinePath: [Int]
+    private var simpleKoReferenceBoard: GoBoard?
 
     public init(boardSize: BoardSize = .standard) {
         self.board = GoBoard(size: boardSize)
@@ -56,6 +57,7 @@ public struct GameRecord: Hashable, Sendable {
         self.currentMoveIndex = 0
         self.rootChildren = []
         self.selectedLinePath = []
+        self.simpleKoReferenceBoard = nil
     }
 
     public init(boardSize: BoardSize = .standard, rootChildren: [GameTreeNode]) throws {
@@ -64,6 +66,7 @@ public struct GameRecord: Hashable, Sendable {
         self.currentMoveIndex = 0
         self.rootChildren = rootChildren
         self.selectedLinePath = []
+        self.simpleKoReferenceBoard = nil
         self.selectedLinePath = selectedLineFollowingFirstChildren(from: [])
         try goToEnd()
     }
@@ -97,7 +100,15 @@ public struct GameRecord: Hashable, Sendable {
     }
 
     public mutating func play(_ playedMove: PlayedMove) throws {
-        _ = try board(afterApplying: playedMove, to: board)
+        if let expectedPlayer = expectedPlayerForNewMove(), playedMove.color != expectedPlayer {
+            throw BoardError.wrongPlayer(expected: expectedPlayer, actual: playedMove.color)
+        }
+
+        _ = try GameRules.applying(
+            playedMove,
+            to: board,
+            simpleKoReferenceBoard: simpleKoReferenceBoard
+        )
 
         let parentPath = Array(selectedLinePath.prefix(currentMoveIndex))
         let childIndex = appendOrFindChild(GameTreeNode(playedMove: playedMove), to: parentPath)
@@ -140,12 +151,27 @@ public struct GameRecord: Hashable, Sendable {
     }
 
     private mutating func refreshReviewedPosition() throws {
-        board = GoBoard(size: board.size)
+        var rebuiltBoard = GoBoard(size: board.size)
+        var rebuiltSimpleKoReferenceBoard: GoBoard?
+        var expectedPlayer: StoneColor?
 
         for playedMove in appliedMoves {
-            board = try board(afterApplying: playedMove, to: board)
+            if let expectedPlayer, playedMove.color != expectedPlayer {
+                throw BoardError.wrongPlayer(expected: expectedPlayer, actual: playedMove.color)
+            }
+
+            let beforeMove = rebuiltBoard
+            rebuiltBoard = try GameRules.applying(
+                playedMove,
+                to: rebuiltBoard,
+                simpleKoReferenceBoard: rebuiltSimpleKoReferenceBoard
+            )
+            rebuiltSimpleKoReferenceBoard = beforeMove
+            expectedPlayer = playedMove.color.opponent
         }
 
+        board = rebuiltBoard
+        simpleKoReferenceBoard = rebuiltSimpleKoReferenceBoard
         nextPlayer = nextPlayerAfterMove(at: currentMoveIndex)
     }
 
@@ -157,13 +183,8 @@ public struct GameRecord: Hashable, Sendable {
         return selectedMoves.prefix(moveIndex).last?.color.opponent ?? .black
     }
 
-    private func board(afterApplying playedMove: PlayedMove, to board: GoBoard) throws -> GoBoard {
-        switch playedMove.move {
-        case .play(let point):
-            return try board.placing(playedMove.color, at: point)
-        case .pass:
-            return board
-        }
+    private func expectedPlayerForNewMove() -> StoneColor? {
+        currentMoveIndex == 0 ? nil : nextPlayer
     }
 
     private func selectedLineFollowingFirstChildren(from path: [Int]) -> [Int] {

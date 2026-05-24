@@ -114,3 +114,33 @@ func parserReportsVariationErrorsAtVariationDepth() throws {
         _ = try SGFDocument.parse("(;GM[1]FF[4]SZ[9];B[aa](;W[bb])(;W[aa]))")
     }
 }
+
+@Test
+func parserRejectsImmediateSimpleKoRecapture() throws {
+    #expect(throws: SGFDocumentError.illegalMove(moveNumber: 10, .simpleKo)) {
+        _ = try SGFDocument.parse("(;GM[1]FF[4]SZ[5];B[bc];W[cc];B[dc];W[bb];B[cd];W[db];B[];W[ca];B[cb];W[cc])")
+    }
+}
+
+@Test
+func parserAllowsKoRecaptureAfterInterveningPasses() throws {
+    let document = try SGFDocument.parse("(;GM[1]FF[4]SZ[5];B[bc];W[cc];B[dc];W[bb];B[cd];W[db];B[];W[ca];B[cb];W[];B[];W[cc])")
+    let game = try document.gameRecord()
+
+    #expect(game.board[BoardPoint(x: 2, y: 2)] == .white)
+    #expect(game.board[BoardPoint(x: 2, y: 1)] == nil)
+}
+
+@Test
+func parserRejectsSamePlayerMoveAfterPass() throws {
+    #expect(throws: SGFDocumentError.illegalMove(moveNumber: 11, .wrongPlayer(expected: .black, actual: .white))) {
+        _ = try SGFDocument.parse("(;GM[1]FF[4]SZ[5];B[bc];W[cc];B[dc];W[bb];B[cd];W[db];B[];W[ca];B[cb];W[];W[cc])")
+    }
+}
+
+@Test
+func parserKeepsKoHistoryVariationLocal() throws {
+    #expect(throws: SGFDocumentError.illegalMove(moveNumber: 10, .simpleKo)) {
+        _ = try SGFDocument.parse("(;GM[1]FF[4]SZ[5];B[bc];W[cc];B[dc];W[bb];B[cd];W[db];B[];W[ca];B[cb](;W[])(;W[cc]))")
+    }
+}

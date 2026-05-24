@@ -34,7 +34,13 @@ public struct SGFDocument: Hashable, Sendable {
     }
 
     public func gameRecord() throws -> GameRecord {
-        try validate(nodes: rootChildren, from: GoBoard(size: boardSize), moveNumber: 1)
+        try validate(
+            nodes: rootChildren,
+            from: GoBoard(size: boardSize),
+            simpleKoReferenceBoard: nil,
+            expectedPlayer: nil,
+            moveNumber: 1
+        )
         return try GameRecord(boardSize: boardSize, rootChildren: rootChildren)
     }
 
@@ -146,21 +152,39 @@ public struct SGFDocument: Hashable, Sendable {
         return [first.playedMove] + selectedLineMoves(in: first.children)
     }
 
-    private func validate(nodes: [GameTreeNode], from board: GoBoard, moveNumber: Int) throws {
+    private func validate(
+        nodes: [GameTreeNode],
+        from board: GoBoard,
+        simpleKoReferenceBoard: GoBoard?,
+        expectedPlayer: StoneColor?,
+        moveNumber: Int
+    ) throws {
         for node in nodes {
+            if let expectedPlayer, node.playedMove.color != expectedPlayer {
+                throw SGFDocumentError.illegalMove(
+                    moveNumber: moveNumber,
+                    .wrongPlayer(expected: expectedPlayer, actual: node.playedMove.color)
+                )
+            }
+
             let nextBoard: GoBoard
             do {
-                switch node.playedMove.move {
-                case .play(let point):
-                    nextBoard = try board.placing(node.playedMove.color, at: point)
-                case .pass:
-                    nextBoard = board
-                }
+                nextBoard = try GameRules.applying(
+                    node.playedMove,
+                    to: board,
+                    simpleKoReferenceBoard: simpleKoReferenceBoard
+                )
             } catch let error as BoardError {
                 throw SGFDocumentError.illegalMove(moveNumber: moveNumber, error)
             }
 
-            try validate(nodes: node.children, from: nextBoard, moveNumber: moveNumber + 1)
+            try validate(
+                nodes: node.children,
+                from: nextBoard,
+                simpleKoReferenceBoard: board,
+                expectedPlayer: node.playedMove.color.opponent,
+                moveNumber: moveNumber + 1
+            )
         }
     }
 

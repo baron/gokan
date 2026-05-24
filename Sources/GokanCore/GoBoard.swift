@@ -20,6 +20,8 @@ public enum BoardError: Error, Equatable, Sendable {
     case pointOutOfBounds
     case occupiedPoint
     case suicide
+    case simpleKo
+    case wrongPlayer(expected: StoneColor, actual: StoneColor)
 }
 
 public struct GoBoard: Hashable, Sendable {
