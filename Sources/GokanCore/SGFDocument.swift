@@ -28,7 +28,7 @@ public struct SGFDocument: Hashable, Sendable {
 
         for (index, playedMove) in moves.enumerated() {
             do {
-                try record.play(playedMove.move)
+                try record.play(playedMove)
             } catch let error as BoardError {
                 throw SGFDocumentError.illegalMove(moveNumber: index + 1, error)
             }

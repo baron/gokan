@@ -36,4 +36,16 @@ public struct GameRecord: Hashable, Sendable {
         moves.append(PlayedMove(color: nextPlayer, move: move))
         nextPlayer = nextPlayer.opponent
     }
+
+    public mutating func play(_ playedMove: PlayedMove) throws {
+        switch playedMove.move {
+        case .play(let point):
+            board = try board.placing(playedMove.color, at: point)
+        case .pass:
+            break
+        }
+
+        moves.append(playedMove)
+        nextPlayer = playedMove.color.opponent
+    }
 }

@@ -37,6 +37,18 @@ func parsesSimpleSgfIntoGameRecord() throws {
 }
 
 @Test
+func parsesWhiteFirstSgfUsingStoredMoveColors() throws {
+    let document = try SGFDocument.parse("(;GM[1]FF[4]SZ[9];W[ee];B[ef])")
+    let game = try document.gameRecord()
+
+    #expect(game.moves.count == 2)
+    #expect(game.moves[0].color == .white)
+    #expect(game.board[BoardPoint(x: 4, y: 4)] == .white)
+    #expect(game.board[BoardPoint(x: 4, y: 5)] == .black)
+    #expect(game.nextPlayer == .white)
+}
+
+@Test
 func parserRejectsIllegalSgfMove() throws {
     #expect(throws: SGFDocumentError.illegalMove(moveNumber: 2, .occupiedPoint)) {
         _ = try SGFDocument.parse("(;GM[1]FF[4]SZ[9];B[aa];W[aa])")

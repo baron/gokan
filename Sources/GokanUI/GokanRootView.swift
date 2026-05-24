@@ -15,14 +15,14 @@ public struct GokanRootView: View {
         } detail: {
             BoardWorkspaceView(model: model)
         }
-        .task(id: model.game.moves.count) {
+        .task(id: model.positionVersion) {
             await model.analyze()
         }
     }
 }
 
 private struct SidebarView: View {
-    let model: GokanAppModel
+    @Bindable var model: GokanAppModel
 
     var body: some View {
         List {
@@ -30,6 +30,58 @@ private struct SidebarView: View {
                 Label("\(model.game.board.size.width)x\(model.game.board.size.height)", systemImage: "square.grid.3x3")
                 Label("\(model.game.moves.count) moves", systemImage: "list.number")
                 Label("\(model.game.nextPlayer.rawValue.capitalized) to play", systemImage: "circle.lefthalf.filled")
+            }
+
+            Section("Controls") {
+                Button {
+                    model.newGame()
+                } label: {
+                    Label("New Game", systemImage: "doc.badge.plus")
+                }
+
+                Button {
+                    model.pass()
+                } label: {
+                    Label("Pass", systemImage: "arrow.uturn.forward")
+                }
+
+                Button {
+                    do {
+                        try model.exportSGFText()
+                    } catch {
+                        model.documentError = String(describing: error)
+                    }
+                } label: {
+                    Label("Export SGF", systemImage: "square.and.arrow.up")
+                }
+            }
+
+            Section("SGF") {
+                TextEditor(text: $model.sgfText)
+                    .font(.system(.caption, design: .monospaced))
+                    .frame(minHeight: 120)
+
+                Button {
+                    model.loadSGFText(model.sgfText)
+                } label: {
+                    Label("Load SGF", systemImage: "square.and.arrow.down")
+                }
+
+                if model.exportedSGFText.isEmpty == false {
+                    ScrollView(.horizontal) {
+                        Text(model.exportedSGFText)
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                    }
+                    .frame(minHeight: 44)
+                }
+            }
+
+            if let documentError = model.documentError {
+                Section("Document") {
+                    Label(documentError, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                }
             }
 
             if let analysis = model.analysis {
