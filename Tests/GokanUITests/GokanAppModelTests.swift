@@ -596,7 +596,10 @@ func modelDefaultsToMockEngineStatus() {
 @Test
 func selectingKataGoWithMissingPathsReportsIncompleteStatus() async {
     let probe = EngineFactoryProbe()
-    let model = GokanAppModel(engineFactory: probe.makeEngine(selection:))
+    let model = GokanAppModel(
+        engineFactory: probe.makeEngine(selection:),
+        supportsKataGoSubprocess: true
+    )
 
     model.engineKind = .kataGo
     await model.analyze()
@@ -608,9 +611,34 @@ func selectingKataGoWithMissingPathsReportsIncompleteStatus() async {
 
 @MainActor
 @Test
+func selectingKataGoWhenSubprocessUnsupportedReportsUnavailableStatus() async {
+    let probe = EngineFactoryProbe()
+    let model = GokanAppModel(
+        engineFactory: probe.makeEngine(selection:),
+        supportsKataGoSubprocess: false
+    )
+
+    model.engineKind = .kataGo
+    model.kataGoSettings = KataGoPathSettings(
+        executablePath: "/usr/local/bin/katago",
+        modelPath: "/models/model.bin.gz",
+        configPath: "/configs/analysis.cfg"
+    )
+    await model.analyze()
+
+    #expect(model.engineStatus == .kataGoUnsupported)
+    #expect(model.analysisError == EngineStatus.kataGoUnsupported.message)
+    #expect(probe.callCount == 0)
+}
+
+@MainActor
+@Test
 func configuredKataGoSelectionIsPassedToEngineFactory() throws {
     let probe = EngineFactoryProbe()
-    let model = GokanAppModel(engineFactory: probe.makeEngine(selection:))
+    let model = GokanAppModel(
+        engineFactory: probe.makeEngine(selection:),
+        supportsKataGoSubprocess: true
+    )
 
     model.engineKind = .kataGo
     model.kataGoSettings = KataGoPathSettings(
@@ -675,11 +703,19 @@ func engineSettingsPersistAcrossModelInstances() {
         modelPath: "/models/g170.bin.gz",
         configPath: "/configs/analysis.cfg"
     )
-    let firstModel = GokanAppModel(engine: SilentAnalysisEngine(), settingsDefaults: defaults.userDefaults)
+    let firstModel = GokanAppModel(
+        engine: SilentAnalysisEngine(),
+        settingsDefaults: defaults.userDefaults,
+        supportsKataGoSubprocess: true
+    )
 
     firstModel.engineKind = .kataGo
     firstModel.kataGoSettings = settings
-    let restoredModel = GokanAppModel(engine: SilentAnalysisEngine(), settingsDefaults: defaults.userDefaults)
+    let restoredModel = GokanAppModel(
+        engine: SilentAnalysisEngine(),
+        settingsDefaults: defaults.userDefaults,
+        supportsKataGoSubprocess: true
+    )
 
     #expect(restoredModel.engineKind == .kataGo)
     #expect(restoredModel.kataGoSettings == settings)
@@ -691,10 +727,18 @@ func engineSettingsPersistAcrossModelInstances() {
 @Test
 func persistedIncompleteKataGoSettingsRestoreIncompleteStatus() {
     let defaults = isolatedDefaults()
-    let firstModel = GokanAppModel(engine: SilentAnalysisEngine(), settingsDefaults: defaults.userDefaults)
+    let firstModel = GokanAppModel(
+        engine: SilentAnalysisEngine(),
+        settingsDefaults: defaults.userDefaults,
+        supportsKataGoSubprocess: true
+    )
 
     firstModel.engineKind = .kataGo
-    let restoredModel = GokanAppModel(engine: SilentAnalysisEngine(), settingsDefaults: defaults.userDefaults)
+    let restoredModel = GokanAppModel(
+        engine: SilentAnalysisEngine(),
+        settingsDefaults: defaults.userDefaults,
+        supportsKataGoSubprocess: true
+    )
 
     #expect(restoredModel.engineKind == .kataGo)
     #expect(restoredModel.kataGoSettings == KataGoPathSettings())

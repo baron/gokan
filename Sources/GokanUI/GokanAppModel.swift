@@ -56,6 +56,7 @@ public enum EngineStatus: Equatable, Sendable {
     case mock
     case kataGoConfigured
     case kataGoIncomplete(missingFields: [String])
+    case kataGoUnsupported
     case error(String)
 
     public var message: String {
@@ -66,6 +67,8 @@ public enum EngineStatus: Equatable, Sendable {
             "KataGo paths are configured."
         case .kataGoIncomplete(let missingFields):
             "Missing \(missingFields.joined(separator: ", "))."
+        case .kataGoUnsupported:
+            "KataGo analysis is not available on iOS in this build."
         case .error(let message):
             message
         }
@@ -113,27 +116,39 @@ public final class GokanAppModel {
 
     private let engineFactory: AnalysisEngineFactory
     private let settingsDefaults: UserDefaults?
+    private let supportsKataGoSubprocess: Bool
     private var isRestoringEngineSelection = false
 
     public init() {
         self.engineFactory = Self.defaultEngineFactory
         self.settingsDefaults = .standard
+        self.supportsKataGoSubprocess = Self.defaultSupportsKataGoSubprocess
         restoreEngineSelection(Self.loadPersistedEngineSelection(from: .standard))
         refreshEngineStatus()
     }
 
-    public init(engine: any GoAnalysisEngine, settingsDefaults: UserDefaults? = nil) {
+    public init(
+        engine: any GoAnalysisEngine,
+        settingsDefaults: UserDefaults? = nil,
+        supportsKataGoSubprocess: Bool? = nil
+    ) {
         self.engineFactory = { _ in engine }
         self.settingsDefaults = settingsDefaults
+        self.supportsKataGoSubprocess = supportsKataGoSubprocess ?? Self.defaultSupportsKataGoSubprocess
         if let settingsDefaults {
             restoreEngineSelection(Self.loadPersistedEngineSelection(from: settingsDefaults))
         }
         refreshEngineStatus()
     }
 
-    public init(engineFactory: @escaping AnalysisEngineFactory, settingsDefaults: UserDefaults? = nil) {
+    public init(
+        engineFactory: @escaping AnalysisEngineFactory,
+        settingsDefaults: UserDefaults? = nil,
+        supportsKataGoSubprocess: Bool? = nil
+    ) {
         self.engineFactory = engineFactory
         self.settingsDefaults = settingsDefaults
+        self.supportsKataGoSubprocess = supportsKataGoSubprocess ?? Self.defaultSupportsKataGoSubprocess
         if let settingsDefaults {
             restoreEngineSelection(Self.loadPersistedEngineSelection(from: settingsDefaults))
         }
@@ -365,8 +380,11 @@ public final class GokanAppModel {
 
     public func makeAnalysisEngine() throws -> any GoAnalysisEngine {
         let selection = AnalysisEngineSelection(kind: engineKind, kataGoSettings: kataGoSettings)
-        if case .kataGoIncomplete = engineStatus {
+        switch engineStatus {
+        case .kataGoIncomplete, .kataGoUnsupported:
             throw engineStatus
+        case .mock, .kataGoConfigured, .error:
+            break
         }
         return try engineFactory(selection)
     }
@@ -425,7 +443,10 @@ public final class GokanAppModel {
     }
 
     private func refreshEngineStatus() {
-        engineStatus = Self.status(for: AnalysisEngineSelection(kind: engineKind, kataGoSettings: kataGoSettings))
+        engineStatus = Self.status(
+            for: AnalysisEngineSelection(kind: engineKind, kataGoSettings: kataGoSettings),
+            supportsKataGoSubprocess: supportsKataGoSubprocess
+        )
     }
 
     private func restoreEngineSelection(_ selection: AnalysisEngineSelection) {
@@ -457,11 +478,18 @@ public final class GokanAppModel {
         return AnalysisEngineSelection(kind: kind, kataGoSettings: settings)
     }
 
-    private nonisolated static func status(for selection: AnalysisEngineSelection) -> EngineStatus {
+    private nonisolated static func status(
+        for selection: AnalysisEngineSelection,
+        supportsKataGoSubprocess: Bool
+    ) -> EngineStatus {
         switch selection.kind {
         case .mock:
             return .mock
         case .kataGo:
+            guard supportsKataGoSubprocess else {
+                return .kataGoUnsupported
+            }
+
             let missingFields = selection.kataGoSettings.missingFields
             return missingFields.isEmpty ? .kataGoConfigured : .kataGoIncomplete(missingFields: missingFields)
         }
@@ -485,6 +513,14 @@ public final class GokanAppModel {
                 )
             )
         }
+    }
+
+    private nonisolated static var defaultSupportsKataGoSubprocess: Bool {
+        #if os(macOS)
+        true
+        #else
+        false
+        #endif
     }
 }
 

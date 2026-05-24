@@ -156,12 +156,14 @@ private struct SidebarView: View {
                 }
 
                 if model.engineKind == .kataGo {
+                    #if os(macOS)
                     TextField("Executable path", text: $model.kataGoSettings.executablePath)
                         .textFieldStyle(.roundedBorder)
                     TextField("Model path", text: $model.kataGoSettings.modelPath)
                         .textFieldStyle(.roundedBorder)
                     TextField("Config path", text: $model.kataGoSettings.configPath)
                         .textFieldStyle(.roundedBorder)
+                    #endif
                 }
 
                 Label(model.engineStatus.message, systemImage: engineStatusSystemImage)
@@ -292,7 +294,7 @@ private struct SidebarView: View {
             "testtube.2"
         case .kataGoConfigured:
             "checkmark.circle"
-        case .kataGoIncomplete:
+        case .kataGoIncomplete, .kataGoUnsupported:
             "exclamationmark.triangle"
         case .error:
             "xmark.octagon"
@@ -305,7 +307,7 @@ private struct SidebarView: View {
             .secondary
         case .kataGoConfigured:
             .green
-        case .kataGoIncomplete:
+        case .kataGoIncomplete, .kataGoUnsupported:
             .orange
         case .error:
             .red
