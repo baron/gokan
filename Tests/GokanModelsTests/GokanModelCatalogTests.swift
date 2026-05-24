@@ -116,6 +116,26 @@ func catalogRejectsWhitespacePaddedProfileIdentity() throws {
     }
 }
 
+@Test
+func catalogErrorsExposeLocalizedDescriptions() {
+    #expect(
+        GokanModelCatalogError.unsupportedSchemaVersion(2).localizedDescription
+            == "Unsupported model catalog schema version 2."
+    )
+    #expect(
+        GokanModelCatalogError.duplicateProfileID("tiny-dev").localizedDescription
+            == "Model catalog contains duplicate profile id tiny-dev."
+    )
+    #expect(
+        GokanModelCatalogError.invalidProfile(id: "tiny-dev", reason: "Display name is empty.").localizedDescription
+            == "Model catalog profile tiny-dev is invalid: Display name is empty."
+    )
+    #expect(
+        GokanModelCatalogError.decodeFailed("bad JSON").localizedDescription
+            == "Could not decode model catalog: bad JSON"
+    )
+}
+
 private func fixtureProfile(
     id: String = "tiny-dev",
     modelFileName: String = "tiny.bin.gz"

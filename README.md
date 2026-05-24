@@ -16,7 +16,7 @@ headers, and release materials.
 
 - Native SwiftUI app for iOS, iPadOS, and macOS.
 - Shared Swift package for board state, SGF parsing, engine orchestration, model
-  catalog metadata, and app settings.
+  catalog metadata import, and app settings.
 - KataGo integrated as a separately tracked engine fork, preserving upstream
   license notices.
 - Apple Silicon performance work focused first on the existing KataGo Metal
@@ -58,11 +58,13 @@ KataGo's Metal backend requires CMake, Ninja, Xcode, and Swift/C++ interop.
 The Swift package builds the shared core, model metadata/cache helpers, KataGo
 analysis boundary, SwiftUI shell, and macOS executable target.
 
-### Model profiles and cache
+### Model profiles, catalogs, and cache
 
 Model profiles are metadata only. Gokan does not download or bundle KataGo
-neural network files in this repository. When a catalog-enabled build selects a
-profile, place user-provided files under:
+neural network files in this repository. The app can load a local catalog JSON
+at runtime and persists the validated metadata in local app settings so the
+profile list survives relaunches. When a loaded catalog selects a profile, place
+user-provided files under:
 
 ```text
 <cacheRoot>/models/<modelFileName>
@@ -90,8 +92,8 @@ upstream licenses and notices. See [LICENSE](LICENSE),
 and [docs/compliance.md](docs/compliance.md).
 
 Model catalog entries track local file names, checksums, and license notice
-metadata only. Neural network binaries should live outside git or under ignored
-cache directories.
+metadata only. Persisted catalog JSON is still metadata; neural network binaries
+should live outside git or under ignored cache directories.
 
 App Store distribution needs a separate legal decision because GPL-family
 licenses and Apple's distribution terms can conflict.

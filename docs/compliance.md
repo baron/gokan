@@ -17,6 +17,8 @@ Practical requirements:
 - Track model checksums and license notice metadata in catalog/profile files;
   keep neural network binaries out of git unless a release policy explicitly
   allows them.
+- Runtime catalog import stores only validated JSON metadata in local app
+  settings. It does not copy, download, or distribute model binaries.
 - Treat profile selection in the app as metadata/path resolution only. It is
   not distribution of a model file unless a release also ships the file or a
   populated download mechanism.

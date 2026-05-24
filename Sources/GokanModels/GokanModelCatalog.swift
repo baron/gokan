@@ -9,6 +9,21 @@ public enum GokanModelCatalogError: Error, Equatable, Sendable {
     case decodeFailed(String)
 }
 
+extension GokanModelCatalogError: LocalizedError {
+    public var errorDescription: String? {
+        switch self {
+        case .unsupportedSchemaVersion(let version):
+            "Unsupported model catalog schema version \(version)."
+        case .duplicateProfileID(let id):
+            "Model catalog contains duplicate profile id \(id)."
+        case .invalidProfile(let id, let reason):
+            "Model catalog profile \(id) is invalid: \(reason)"
+        case .decodeFailed(let message):
+            "Could not decode model catalog: \(message)"
+        }
+    }
+}
+
 public struct GokanModelCatalog: Codable, Equatable, Sendable {
     public static let supportedSchemaVersion = 1
     public static let empty = try! GokanModelCatalog(profiles: [])

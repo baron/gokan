@@ -116,6 +116,7 @@ private enum EngineSettingsDefaultsKey {
     static let configPath = "Gokan.kataGo.configPath"
     static let modelProfileID = "Gokan.kataGo.modelProfileID"
     static let modelCacheRootPath = "Gokan.kataGo.modelCacheRootPath"
+    static let modelCatalogData = "Gokan.modelCatalog.data"
 }
 
 public enum EngineStatus: Equatable, Sendable {
@@ -187,17 +188,20 @@ public final class GokanAppModel {
     public private(set) var engineStatus: EngineStatus = .mock
     public private(set) var kataGoModelStatus: KataGoModelStatus = .notSelected
     public private(set) var modelCatalog: GokanModelCatalog
+    public private(set) var modelCatalogError: String?
 
     private let engineFactory: AnalysisEngineFactory
     private let settingsDefaults: UserDefaults?
     private let supportsKataGoSubprocess: Bool
     private var isRestoringEngineSelection = false
+    private var modelCatalogVersion = 0
 
     public init(modelCatalog: GokanModelCatalog = .empty) {
         self.modelCatalog = modelCatalog
         self.engineFactory = Self.defaultEngineFactory
         self.settingsDefaults = .standard
         self.supportsKataGoSubprocess = Self.defaultSupportsKataGoSubprocess
+        restoreModelCatalog(from: .standard)
         restoreEngineSelection(Self.loadPersistedEngineSelection(from: .standard))
         refreshEngineStatus()
     }
@@ -213,6 +217,7 @@ public final class GokanAppModel {
         self.settingsDefaults = settingsDefaults
         self.supportsKataGoSubprocess = supportsKataGoSubprocess ?? Self.defaultSupportsKataGoSubprocess
         if let settingsDefaults {
+            restoreModelCatalog(from: settingsDefaults)
             restoreEngineSelection(Self.loadPersistedEngineSelection(from: settingsDefaults))
         }
         refreshEngineStatus()
@@ -229,6 +234,7 @@ public final class GokanAppModel {
         self.settingsDefaults = settingsDefaults
         self.supportsKataGoSubprocess = supportsKataGoSubprocess ?? Self.defaultSupportsKataGoSubprocess
         if let settingsDefaults {
+            restoreModelCatalog(from: settingsDefaults)
             restoreEngineSelection(Self.loadPersistedEngineSelection(from: settingsDefaults))
         }
         refreshEngineStatus()
@@ -445,6 +451,41 @@ public final class GokanAppModel {
         }
     }
 
+    public func loadModelCatalogFile(at url: URL) {
+        let isSecurityScoped = url.startAccessingSecurityScopedResource()
+        defer {
+            if isSecurityScoped {
+                url.stopAccessingSecurityScopedResource()
+            }
+        }
+
+        do {
+            loadModelCatalogData(try Data(contentsOf: url))
+        } catch {
+            reportModelCatalogImportError(error)
+        }
+    }
+
+    public func loadModelCatalogData(_ data: Data) {
+        do {
+            let catalog = try GokanModelCatalog.decode(from: data)
+            let persistedData = try catalog.encode()
+            replaceModelCatalog(catalog, persistedData: persistedData)
+            modelCatalogError = nil
+        } catch {
+            reportModelCatalogImportError(error)
+        }
+    }
+
+    public func clearModelCatalog() {
+        replaceModelCatalog(.empty, persistedData: nil)
+        modelCatalogError = nil
+    }
+
+    public func reportModelCatalogImportError(_ error: Error) {
+        modelCatalogError = error.localizedDescription
+    }
+
     @discardableResult
     public func exportSGFText() throws -> String {
         let text = try SGFDocument(game: game).serialize()
@@ -485,10 +526,12 @@ public final class GokanAppModel {
         }
 
         let selectedProfileID = profile.id
+        let verificationModelCatalogVersion = modelCatalogVersion
         let cache = GokanModelCache(rootURL: URL(filePath: cacheRootPath))
         let result = await cache.verifyChecksum(for: profile)
 
         guard verificationEngineKind == engineKind,
+              verificationModelCatalogVersion == modelCatalogVersion,
               selectedProfileID == trimmed(kataGoModelSettings.selectedProfileID),
               cacheRootPath == trimmed(kataGoModelSettings.cacheRootPath),
               manualModelPath == trimmed(kataGoSettings.modelPath) else {
@@ -731,6 +774,54 @@ public final class GokanAppModel {
         let resolution = resolveKataGoConfiguration()
         kataGoModelStatus = resolution.modelStatus
         updateEngineStatus(with: resolution)
+    }
+
+    private func replaceModelCatalog(_ catalog: GokanModelCatalog, persistedData: Data?) {
+        let previousSelection = currentAnalysisEngineSelection()
+        modelCatalog = catalog
+        modelCatalogVersion += 1
+
+        if let settingsDefaults {
+            if let persistedData {
+                settingsDefaults.set(persistedData, forKey: EngineSettingsDefaultsKey.modelCatalogData)
+            } else {
+                settingsDefaults.removeObject(forKey: EngineSettingsDefaultsKey.modelCatalogData)
+            }
+        }
+
+        refreshEngineStatus()
+        invalidateAnalysisAfterModelCatalogChange(previousSelection: previousSelection)
+    }
+
+    private func restoreModelCatalog(from defaults: UserDefaults) {
+        guard let data = defaults.data(forKey: EngineSettingsDefaultsKey.modelCatalogData) else {
+            return
+        }
+
+        do {
+            modelCatalog = try GokanModelCatalog.decode(from: data)
+            modelCatalogVersion += 1
+            modelCatalogError = nil
+        } catch {
+            defaults.removeObject(forKey: EngineSettingsDefaultsKey.modelCatalogData)
+            modelCatalogError = error.localizedDescription
+        }
+    }
+
+    private func invalidateAnalysisAfterModelCatalogChange(previousSelection: AnalysisEngineSelection) {
+        guard engineKind == .kataGo else {
+            return
+        }
+
+        let currentSelection = currentAnalysisEngineSelection()
+        guard currentSelection != previousSelection else {
+            return
+        }
+
+        analysis = nil
+        analysisError = nil
+        analysisDiagnostics = nil
+        analysisRequestVersion += 1
     }
 
     private func updateEngineStatus(with resolution: KataGoConfigurationResolution) {

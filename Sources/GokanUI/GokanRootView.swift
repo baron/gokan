@@ -2,6 +2,7 @@
 
 import Foundation
 import SwiftUI
+import UniformTypeIdentifiers
 import GokanCore
 import GokanEngine
 import GokanModels
@@ -57,6 +58,7 @@ public struct GokanRootView: View {
 private struct SidebarView: View {
     @Bindable var model: GokanAppModel
     @State private var isImportingSGF = false
+    @State private var isImportingModelCatalog = false
     @State private var isExportingSGF = false
     @State private var exportDocument = SGFFileDocument()
 
@@ -226,6 +228,33 @@ private struct SidebarView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
+                    Label(modelCatalogStatusTitle, systemImage: "list.bullet.rectangle")
+                        .accessibilityIdentifier("gokan.model-catalog-status")
+                    Text("Catalogs are metadata only. Provide model and config files separately under the cache root.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    Button {
+                        isImportingModelCatalog = true
+                    } label: {
+                        Label("Load Catalog JSON", systemImage: "doc.badge.plus")
+                    }
+                    .accessibilityIdentifier("gokan.model-catalog-import")
+
+                    Button(role: .destructive) {
+                        model.clearModelCatalog()
+                    } label: {
+                        Label("Clear Catalog", systemImage: "trash")
+                    }
+                    .disabled(model.modelCatalog.profiles.isEmpty)
+                    .accessibilityIdentifier("gokan.model-catalog-clear")
+
+                    if let modelCatalogError = model.modelCatalogError {
+                        Label(modelCatalogError, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.orange)
+                            .accessibilityIdentifier("gokan.model-catalog-error")
+                    }
+
                     Picker("Model profile", selection: $model.kataGoModelSettings.selectedProfileID) {
                         Text("Manual paths / no profile")
                             .tag("")
@@ -241,7 +270,7 @@ private struct SidebarView: View {
                     .accessibilityIdentifier("gokan.model-profile-picker")
 
                     if model.modelCatalog.profiles.isEmpty {
-                        Text("No model profiles are bundled in this build.")
+                        Text("No model profiles are loaded. Load a metadata catalog JSON to select profiles.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -367,6 +396,12 @@ private struct SidebarView: View {
             allowsMultipleSelection: false,
             onCompletion: importSGF(result:)
         )
+        .fileImporter(
+            isPresented: $isImportingModelCatalog,
+            allowedContentTypes: [.json, .plainText],
+            allowsMultipleSelection: false,
+            onCompletion: importModelCatalog(result:)
+        )
         .fileExporter(
             isPresented: $isExportingSGF,
             document: exportDocument,
@@ -385,6 +420,18 @@ private struct SidebarView: View {
             model.loadSGFFile(at: url)
         case .failure(let error):
             model.documentError = error.localizedDescription
+        }
+    }
+
+    private func importModelCatalog(result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            guard let url = urls.first else {
+                return
+            }
+            model.loadModelCatalogFile(at: url)
+        case .failure(let error):
+            model.reportModelCatalogImportError(error)
         }
     }
 
@@ -461,6 +508,17 @@ private struct SidebarView: View {
             return nil
         }
         return profileID
+    }
+
+    private var modelCatalogStatusTitle: String {
+        switch model.modelCatalog.profiles.count {
+        case 0:
+            "No model catalog loaded."
+        case 1:
+            "1 model profile loaded."
+        default:
+            "\(model.modelCatalog.profiles.count) model profiles loaded."
+        }
     }
 
     private var modelStatusSystemImage: String {

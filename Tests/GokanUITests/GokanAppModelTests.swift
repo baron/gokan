@@ -861,6 +861,196 @@ func kataGoModelSettingsPersistAcrossModelInstances() throws {
 
 @MainActor
 @Test
+func loadModelCatalogDataReplacesEmptyCatalog() throws {
+    let model = GokanAppModel(engine: SilentAnalysisEngine(), modelCatalog: .empty)
+
+    model.loadModelCatalogData(try modelCatalog().encode())
+
+    #expect(model.modelCatalog.profile(id: "tiny-dev")?.displayName == "Tiny Dev Model")
+    #expect(model.modelCatalogError == nil)
+}
+
+@MainActor
+@Test
+func invalidModelCatalogDataPreservesCurrentCatalogAndReportsError() throws {
+    let catalog = try modelCatalog()
+    let model = GokanAppModel(engine: SilentAnalysisEngine(), modelCatalog: catalog)
+
+    model.loadModelCatalogData(Data("not json".utf8))
+
+    #expect(model.modelCatalog == catalog)
+    #expect(model.modelCatalogError?.isEmpty == false)
+}
+
+@MainActor
+@Test
+func importedModelCatalogPersistsAcrossModelInstances() throws {
+    let defaults = isolatedDefaults()
+    let firstModel = GokanAppModel(
+        engine: SilentAnalysisEngine(),
+        settingsDefaults: defaults.userDefaults,
+        modelCatalog: .empty
+    )
+
+    firstModel.loadModelCatalogData(try modelCatalog().encode())
+    let restoredModel = GokanAppModel(
+        engine: SilentAnalysisEngine(),
+        settingsDefaults: defaults.userDefaults,
+        modelCatalog: .empty
+    )
+
+    #expect(restoredModel.modelCatalog.profile(id: "tiny-dev")?.displayName == "Tiny Dev Model")
+    #expect(restoredModel.modelCatalogError == nil)
+}
+
+@MainActor
+@Test
+func invalidPersistedModelCatalogFallsBackAndClearsPersistedData() {
+    let defaults = isolatedDefaults()
+    defaults.userDefaults.set(Data("not json".utf8), forKey: "Gokan.modelCatalog.data")
+
+    let model = GokanAppModel(
+        engine: SilentAnalysisEngine(),
+        settingsDefaults: defaults.userDefaults,
+        modelCatalog: .empty
+    )
+
+    #expect(model.modelCatalog.profiles.isEmpty)
+    #expect(model.modelCatalogError?.isEmpty == false)
+    #expect(defaults.userDefaults.data(forKey: "Gokan.modelCatalog.data") == nil)
+}
+
+@MainActor
+@Test
+func clearingModelCatalogRemovesPersistedMetadataAndRefreshesStatus() throws {
+    let defaults = isolatedDefaults()
+    let model = GokanAppModel(
+        engine: SilentAnalysisEngine(),
+        settingsDefaults: defaults.userDefaults,
+        supportsKataGoSubprocess: true,
+        modelCatalog: .empty
+    )
+
+    model.engineKind = .kataGo
+    model.kataGoSettings = KataGoPathSettings(executablePath: "/usr/local/bin/katago")
+    model.kataGoModelSettings = KataGoModelSettings(selectedProfileID: "tiny-dev", cacheRootPath: "/tmp/gokan-models")
+    model.loadModelCatalogData(try modelCatalog().encode())
+    model.clearModelCatalog()
+
+    let restoredModel = GokanAppModel(
+        engine: SilentAnalysisEngine(),
+        settingsDefaults: defaults.userDefaults,
+        supportsKataGoSubprocess: true,
+        modelCatalog: .empty
+    )
+    #expect(model.modelCatalog.profiles.isEmpty)
+    #expect(model.kataGoModelStatus == .profileUnavailable(profileID: "tiny-dev"))
+    #expect(defaults.userDefaults.data(forKey: "Gokan.modelCatalog.data") == nil)
+    #expect(restoredModel.modelCatalog.profiles.isEmpty)
+}
+
+@MainActor
+@Test
+func loadingModelCatalogEnablesSelectedProfileResolution() throws {
+    let temp = try TemporaryDirectory()
+    let catalog = try modelCatalog()
+    let profile = try #require(catalog.profile(id: "tiny-dev"))
+    let cache = GokanModelCache(rootURL: temp.url)
+    try writeData("hello", to: cache.modelURL(for: profile))
+    try writeData("config", to: try #require(cache.configURL(for: profile)))
+    let model = GokanAppModel(
+        engine: SilentAnalysisEngine(),
+        supportsKataGoSubprocess: true,
+        modelCatalog: .empty
+    )
+
+    model.engineKind = .kataGo
+    model.kataGoSettings = KataGoPathSettings(executablePath: "/usr/local/bin/katago")
+    model.kataGoModelSettings = KataGoModelSettings(selectedProfileID: "tiny-dev", cacheRootPath: temp.url.path)
+    model.loadModelCatalogData(try catalog.encode())
+
+    #expect(model.engineStatus == .kataGoConfigured)
+    #expect(
+        model.kataGoModelStatus
+            == .profileReady(
+                profileID: "tiny-dev",
+                displayName: "Tiny Dev Model",
+                modelPath: cache.modelURL(for: profile).path,
+                configPath: cache.configURL(for: profile)?.path
+            )
+    )
+}
+
+@MainActor
+@Test
+func loadingModelCatalogWhileMockDoesNotRetriggerAnalysis() throws {
+    let model = GokanAppModel(engine: SilentAnalysisEngine(), modelCatalog: .empty)
+    let originalVersion = model.analysisRequestVersion
+
+    model.loadModelCatalogData(try modelCatalog().encode())
+
+    #expect(model.engineKind == .mock)
+    #expect(model.analysisRequestVersion == originalVersion)
+}
+
+@MainActor
+@Test
+func loadingModelCatalogWhileKataGoInvalidatesAnalysisWhenResolutionChanges() throws {
+    let temp = try TemporaryDirectory()
+    let initialCatalog = try modelCatalog()
+    let initialProfile = try #require(initialCatalog.profile(id: "tiny-dev"))
+    let cache = GokanModelCache(rootURL: temp.url)
+    try writeData("hello", to: cache.modelURL(for: initialProfile))
+    try writeData("config", to: try #require(cache.configURL(for: initialProfile)))
+    let model = GokanAppModel(
+        engine: SilentAnalysisEngine(),
+        supportsKataGoSubprocess: true,
+        modelCatalog: initialCatalog
+    )
+    model.engineKind = .kataGo
+    model.kataGoSettings = KataGoPathSettings(executablePath: "/usr/local/bin/katago")
+    model.kataGoModelSettings = KataGoModelSettings(selectedProfileID: "tiny-dev", cacheRootPath: temp.url.path)
+    model.analysis = snapshot(with: [BoardPoint(x: 3, y: 3)])
+    let originalVersion = model.analysisRequestVersion
+
+    model.loadModelCatalogData(try alternateModelCatalog().encode())
+
+    #expect(model.analysis == nil)
+    #expect(model.analysisRequestVersion == originalVersion + 1)
+}
+
+@MainActor
+@Test
+func checksumVerificationResultIsDiscardedWhenCatalogChanges() async throws {
+    let temp = try TemporaryDirectory()
+    let catalog = try modelCatalog()
+    let profile = try #require(catalog.profile(id: "tiny-dev"))
+    let cache = GokanModelCache(rootURL: temp.url)
+    let payload = Data(repeating: 0x68, count: 32 * 1024 * 1024)
+    try FileManager.default.createDirectory(at: cache.modelURL(for: profile).deletingLastPathComponent(), withIntermediateDirectories: true)
+    try payload.write(to: cache.modelURL(for: profile))
+    try writeData("config", to: try #require(cache.configURL(for: profile)))
+    let model = GokanAppModel(
+        engine: SilentAnalysisEngine(),
+        supportsKataGoSubprocess: true,
+        modelCatalog: catalog
+    )
+    model.engineKind = .kataGo
+    model.kataGoSettings = KataGoPathSettings(executablePath: "/usr/local/bin/katago")
+    model.kataGoModelSettings = KataGoModelSettings(selectedProfileID: "tiny-dev", cacheRootPath: temp.url.path)
+
+    let verification = Task {
+        await model.verifySelectedKataGoModelChecksum()
+    }
+    await Task.yield()
+    model.loadModelCatalogData(try alternateModelCatalog().encode())
+    await verification.value
+
+    #expect(model.kataGoModelStatus == .missingCachedModel(profileID: "tiny-dev", path: temp.url.appending(path: "models").appending(path: "alternate.bin.gz").path))
+}
+
+@MainActor
+@Test
 func selectedKataGoModelProfileReflectsModelSettings() throws {
     let catalog = try modelCatalog()
     let model = GokanAppModel(
@@ -1428,6 +1618,21 @@ private func modelOnlyCatalog() throws -> GokanModelCatalog {
                 id: "model-only",
                 displayName: "Model Only",
                 modelFileName: "model-only.bin.gz",
+                license: GokanModelLicense(name: "Fixture")
+            ),
+        ]
+    )
+}
+
+private func alternateModelCatalog() throws -> GokanModelCatalog {
+    try GokanModelCatalog(
+        profiles: [
+            GokanModelProfile(
+                id: "tiny-dev",
+                displayName: "Alternate Tiny Dev Model",
+                modelFileName: "alternate.bin.gz",
+                defaultConfigFileName: "alternate-analysis.cfg",
+                checksum: try GokanModelChecksum(sha256: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"),
                 license: GokanModelLicense(name: "Fixture")
             ),
         ]

@@ -24,7 +24,7 @@ GokanKataBridge
   Thin boundary to the KataGo executable or embedded C++ entry points
 
 GokanModels
-  Model catalog, download verification, cache management, device profiles
+  Model catalog validation, checksum verification, cache management, device profiles
 ```
 
 The current first implementation slice is a root Swift package with:
@@ -81,7 +81,8 @@ Do not fork for guesses. Fork for measured bottlenecks:
 ## Model Metadata
 
 The first `GokanModels` implementation is metadata-only. It defines local model
-profiles, license/checksum metadata, and this cache convention:
+profiles, license/checksum metadata, catalog validation, and this cache
+convention:
 
 ```text
 <cacheRoot>/
@@ -92,7 +93,10 @@ profiles, license/checksum metadata, and this cache convention:
 ```
 
 It does not download, bundle, or check in neural network files. `GokanUI`
-surfaces profile selection, cache root configuration, readiness status, and
-manual checksum verification in the sidebar. Profile selection only resolves
+surfaces runtime catalog JSON import, profile selection, cache root
+configuration, readiness status, and manual checksum verification in the
+sidebar. Successfully imported catalogs are re-encoded and stored in
+`UserDefaults` as validated metadata, so relaunches restore the same local
+profile list without storing model binaries. Profile selection only resolves
 local files to ordinary `KataGoEngineConfiguration` URLs, so the engine process
 boundary remains independent of catalog details and no fetch behavior is implied.

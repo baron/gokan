@@ -21,10 +21,11 @@ tracked inside its `cpp/external` directory and may use their own licenses.
 - Local path: `models/` for downloaded/cached files
 
 Neural network binaries should not be committed to this repository. Gokan's
-model cache UI may point at user-provided files on disk, but those files remain
-outside the source tree unless a release policy explicitly bundles them. If a
-release bundles a model, include the model filename, source URL, checksum, and
-license text in the release materials.
+model catalog import and cache UI may point at user-provided files on disk, but
+runtime catalog JSON is metadata only and those files remain outside the source
+tree unless a release policy explicitly bundles them. If a release bundles a
+model, include the model filename, source URL, checksum, and license text in the
+release materials.
 
 ## Apple SDKs
 
