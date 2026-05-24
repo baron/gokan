@@ -98,6 +98,19 @@ private struct SidebarView: View {
                 }
             }
 
+            if model.game.moveListItems.isEmpty == false {
+                Section("Moves") {
+                    ForEach(model.game.moveListItems) { item in
+                        Button {
+                            model.goToMove(item.index)
+                        } label: {
+                            Label(moveListTitle(for: item), systemImage: item.isCurrent ? "checkmark.circle.fill" : "circle")
+                        }
+                        .disabled(item.isCurrent)
+                    }
+                }
+            }
+
             if model.game.variationChoices.count > 1 {
                 Section("Variations") {
                     ForEach(model.game.variationChoices) { choice in
@@ -224,6 +237,13 @@ private struct SidebarView: View {
         if case .failure(let error) = result {
             model.documentError = error.localizedDescription
         }
+    }
+
+    private func moveListTitle(for item: GameMoveListItem) -> String {
+        guard let move = item.move else {
+            return "Root"
+        }
+        return "\(item.index). \(moveTitle(for: move))"
     }
 
     private func variationTitle(for choice: GameVariationChoice) -> String {

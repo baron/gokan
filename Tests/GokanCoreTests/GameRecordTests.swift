@@ -116,6 +116,57 @@ func passMovesParticipateInCursorMovement() throws {
 }
 
 @Test
+func emptyGameMoveListContainsCurrentRoot() {
+    let game = GameRecord(boardSize: BoardSize(width: 9, height: 9))
+
+    #expect(game.moveListItems.count == 1)
+    #expect(game.moveListItems[0].index == 0)
+    #expect(game.moveListItems[0].move == nil)
+    #expect(game.moveListItems[0].isCurrent)
+}
+
+@Test
+func moveListCurrentMarkerTracksReviewedPosition() throws {
+    var game = GameRecord(boardSize: BoardSize(width: 9, height: 9))
+    try game.play(.play(BoardPoint(x: 4, y: 4)))
+    try game.play(.play(BoardPoint(x: 4, y: 5)))
+
+    try game.stepBackward()
+
+    #expect(game.moveListItems.map(\.index) == [0, 1, 2])
+    #expect(game.moveListItems.map(\.isCurrent) == [false, true, false])
+}
+
+@Test
+func passMovesAppearInMoveList() throws {
+    var game = GameRecord(boardSize: BoardSize(width: 9, height: 9))
+    try game.play(.pass)
+
+    #expect(game.moveListItems.count == 2)
+    #expect(game.moveListItems[1].move?.move == .pass)
+    #expect(game.moveListItems[1].isCurrent)
+}
+
+@Test
+func moveListFollowsSelectedVariationWithoutFlatteningBranches() throws {
+    var game = try SGFDocument.parse("(;GM[1]FF[4]SZ[9];B[ee](;W[ef])(;W[ff]))").gameRecord()
+
+    #expect(game.moveListItems.compactMap(\.move?.move) == [
+        .play(BoardPoint(x: 4, y: 4)),
+        .play(BoardPoint(x: 4, y: 5))
+    ])
+
+    try game.stepBackward()
+    try game.selectVariation(at: 1)
+
+    #expect(game.moveListItems.compactMap(\.move?.move) == [
+        .play(BoardPoint(x: 4, y: 4)),
+        .play(BoardPoint(x: 5, y: 5))
+    ])
+    #expect(game.moveListItems.map(\.isCurrent) == [false, false, true])
+}
+
+@Test
 func immediateSimpleKoRecaptureIsRejected() throws {
     var game = try gameWithSimpleKoCapture()
     let boardAfterCapture = game.board

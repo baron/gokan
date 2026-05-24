@@ -185,6 +185,20 @@ public final class GokanAppModel {
         }
     }
 
+    public func goToMove(_ moveIndex: Int) {
+        let targetIndex = min(max(moveIndex, 0), game.moves.count)
+        guard targetIndex != game.currentMoveIndex else {
+            return
+        }
+
+        do {
+            try game.goToMove(targetIndex)
+            positionDidChange(selectedPoint: selectedMovePoint, clearDocumentText: false)
+        } catch {
+            analysisError = String(describing: error)
+        }
+    }
+
     public func selectVariation(at index: Int) {
         do {
             try game.selectVariation(at: index)

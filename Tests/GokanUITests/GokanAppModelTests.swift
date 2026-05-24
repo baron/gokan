@@ -285,6 +285,104 @@ func selectingAlternateVariationUpdatesBoard() {
 
 @MainActor
 @Test
+func jumpToCurrentMoveDoesNotRetriggerAnalysis() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    model.loadSGFText("(;GM[1]FF[4]SZ[9];B[ee])")
+    let originalVersion = model.analysisRequestVersion
+
+    model.goToMove(model.game.currentMoveIndex)
+
+    #expect(model.game.currentMoveIndex == 1)
+    #expect(model.analysisRequestVersion == originalVersion)
+}
+
+@MainActor
+@Test
+func jumpToMoveUpdatesReviewedBoardAndSelectedPoint() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    model.loadSGFText("(;GM[1]FF[4]SZ[9];B[ee];W[ef])")
+    model.analysis = AnalysisSnapshot(
+        candidateMoves: [CandidateMove(point: BoardPoint(x: 3, y: 3), policy: 0.5, winRate: 0.5, visits: 10)],
+        scoreLead: 1,
+        completedVisits: 10
+    )
+    let originalVersion = model.analysisRequestVersion
+
+    model.goToMove(1)
+
+    #expect(model.game.currentMoveIndex == 1)
+    #expect(model.game.board[BoardPoint(x: 4, y: 4)] == .black)
+    #expect(model.game.board[BoardPoint(x: 4, y: 5)] == nil)
+    #expect(model.selectedPoint == BoardPoint(x: 4, y: 4))
+    #expect(model.analysis == nil)
+    #expect(model.analysisRequestVersion == originalVersion + 1)
+}
+
+@MainActor
+@Test
+func jumpToRootClearsSelectedPointAndPreservesDocumentText() throws {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    model.loadSGFText("(;GM[1]FF[4]SZ[9];B[ee];W[ef])")
+    model.exportedSGFText = try model.exportSGFText()
+    let originalSGFText = model.sgfText
+    let originalExportText = model.exportedSGFText
+
+    model.goToMove(0)
+
+    #expect(model.game.currentMoveIndex == 0)
+    #expect(model.game.board.occupiedPoints.isEmpty)
+    #expect(model.selectedPoint == nil)
+    #expect(model.sgfText == originalSGFText)
+    #expect(model.exportedSGFText == originalExportText)
+}
+
+@MainActor
+@Test
+func jumpToPassMoveClearsSelectedPoint() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    model.loadSGFText("(;GM[1]FF[4]SZ[9];B[ee];W[])")
+    model.goToMove(1)
+
+    model.goToMove(2)
+
+    #expect(model.game.currentMoveIndex == 2)
+    #expect(model.selectedPoint == nil)
+}
+
+@MainActor
+@Test
+func jumpToMoveUsesSelectedVariationLine() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    model.loadSGFText("(;GM[1]FF[4]SZ[9];B[ee](;W[ef])(;W[ff]))")
+    model.previousMove()
+    model.selectVariation(at: 1)
+
+    model.goToMove(1)
+    model.goToMove(2)
+
+    #expect(model.game.moves[1].move == .play(BoardPoint(x: 5, y: 5)))
+    #expect(model.game.board[BoardPoint(x: 4, y: 5)] == nil)
+    #expect(model.game.board[BoardPoint(x: 5, y: 5)] == .white)
+    #expect(model.selectedPoint == BoardPoint(x: 5, y: 5))
+}
+
+@MainActor
+@Test
+func analysisRequestUsesDirectJumpPrefix() async {
+    let engine = RecordingAnalysisEngine()
+    let model = GokanAppModel(engine: engine)
+    model.loadSGFText("(;GM[1]FF[4]SZ[9];B[ee];W[ef])")
+    model.goToMove(1)
+
+    await model.analyze()
+
+    #expect(engine.lastRequest?.moves.count == 1)
+    #expect(engine.lastRequest?.board[BoardPoint(x: 4, y: 4)] == .black)
+    #expect(engine.lastRequest?.board[BoardPoint(x: 4, y: 5)] == nil)
+}
+
+@MainActor
+@Test
 func staleAnalysisDoesNotOverwriteNewerPosition() async throws {
     let engine = ControlledAnalysisEngine()
     let model = GokanAppModel(engine: engine)

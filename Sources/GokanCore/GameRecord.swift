@@ -42,6 +42,22 @@ public struct GameVariationChoice: Hashable, Sendable, Identifiable {
     }
 }
 
+public struct GameMoveListItem: Hashable, Sendable, Identifiable {
+    public let index: Int
+    public let move: PlayedMove?
+    public let isCurrent: Bool
+
+    public var id: Int {
+        index
+    }
+
+    public init(index: Int, move: PlayedMove?, isCurrent: Bool) {
+        self.index = index
+        self.move = move
+        self.isCurrent = isCurrent
+    }
+}
+
 public struct GameRecord: Hashable, Sendable {
     public private(set) var board: GoBoard
     public private(set) var nextPlayer: StoneColor
@@ -77,6 +93,23 @@ public struct GameRecord: Hashable, Sendable {
 
     public var appliedMoves: [PlayedMove] {
         Array(moves.prefix(currentMoveIndex))
+    }
+
+    public var moveListItems: [GameMoveListItem] {
+        let rootItem = GameMoveListItem(
+            index: 0,
+            move: nil,
+            isCurrent: currentMoveIndex == 0
+        )
+        let moveItems = moves.enumerated().map { offset, move in
+            let index = offset + 1
+            return GameMoveListItem(
+                index: index,
+                move: move,
+                isCurrent: index == currentMoveIndex
+            )
+        }
+        return [rootItem] + moveItems
     }
 
     public var canStepBackward: Bool {
