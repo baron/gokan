@@ -5,6 +5,7 @@ import Foundation
 
 internal final class ProcessKataGoTransport: KataGoTransport, @unchecked Sendable {
     private let configuration: KataGoEngineConfiguration
+    private let launchArguments: [String]
     private let lock = NSLock()
     private var process: Process?
     private var stdinPipe: Pipe?
@@ -13,15 +14,49 @@ internal final class ProcessKataGoTransport: KataGoTransport, @unchecked Sendabl
     private var continuation: AsyncThrowingStream<Data, Error>.Continuation?
     private var stderrTail = ""
     private var isStarting = false
+    private var isProcessLaunched = false
+    private var didFinishResponses = false
+    private var responseFinishError: Error?
 
-    init(configuration: KataGoEngineConfiguration) {
+    convenience init(configuration: KataGoEngineConfiguration) {
+        self.init(
+            configuration: configuration,
+            launchArguments: Self.defaultLaunchArguments(for: configuration)
+        )
+    }
+
+    internal init(configuration: KataGoEngineConfiguration, launchArguments: [String]) {
         self.configuration = configuration
+        self.launchArguments = launchArguments
+    }
+
+    internal static func defaultLaunchArguments(for configuration: KataGoEngineConfiguration) -> [String] {
+        [
+            "analysis",
+            "-model",
+            configuration.modelURL.path,
+            "-config",
+            configuration.configURL.path,
+        ]
     }
 
     func responses() -> AsyncThrowingStream<Data, Error> {
         AsyncThrowingStream { continuation in
             withLock {
-                self.continuation = continuation
+                if didFinishResponses {
+                    if let responseFinishError {
+                        continuation.finish(throwing: responseFinishError)
+                    } else {
+                        continuation.finish()
+                    }
+                } else {
+                    self.continuation?.finish(
+                        throwing: KataGoEngineError.startupFailed(
+                            reason: "Response stream was replaced."
+                        )
+                    )
+                    self.continuation = continuation
+                }
             }
         }
     }
@@ -44,13 +79,7 @@ internal final class ProcessKataGoTransport: KataGoTransport, @unchecked Sendabl
         let stderrPipe = Pipe()
 
         nextProcess.executableURL = configuration.executableURL
-        nextProcess.arguments = [
-            "analysis",
-            "-model",
-            configuration.modelURL.path,
-            "-config",
-            configuration.configURL.path,
-        ]
+        nextProcess.arguments = launchArguments
         nextProcess.standardInput = stdinPipe
         nextProcess.standardOutput = stdoutPipe
         nextProcess.standardError = stderrPipe
@@ -59,21 +88,41 @@ internal final class ProcessKataGoTransport: KataGoTransport, @unchecked Sendabl
             self?.finishIfTerminated(process)
         }
 
+        let stdoutTask = makeStdoutTask(stdoutPipe.fileHandleForReading)
+        let stderrTask = makeStderrTask(stderrPipe.fileHandleForReading)
+
+        withLock {
+            self.process = nextProcess
+            self.stdinPipe = stdinPipe
+            self.stdoutTask = stdoutTask
+            self.stderrTask = stderrTask
+            self.stderrTail = ""
+            self.isProcessLaunched = false
+            self.didFinishResponses = false
+            self.responseFinishError = nil
+        }
+
         do {
             try nextProcess.run()
         } catch {
             withLock {
+                stdoutTask.cancel()
+                stderrTask.cancel()
+                self.process = nil
+                self.stdinPipe = nil
+                self.isProcessLaunched = false
                 isStarting = false
             }
             throw KataGoEngineError.startupFailed(reason: error.localizedDescription)
         }
 
-        withLock {
-            self.process = nextProcess
-            self.stdinPipe = stdinPipe
-            self.stdoutTask = makeStdoutTask(stdoutPipe.fileHandleForReading)
-            self.stderrTask = makeStderrTask(stderrPipe.fileHandleForReading)
+        let shouldTerminateAfterLaunch = withLock {
+            self.isProcessLaunched = true
             self.isStarting = false
+            return self.process == nil || self.didFinishResponses
+        }
+        if shouldTerminateAfterLaunch, nextProcess.isRunning {
+            nextProcess.terminate()
         }
     }
 
@@ -90,15 +139,22 @@ internal final class ProcessKataGoTransport: KataGoTransport, @unchecked Sendabl
     }
 
     func stop() async {
-        let process = withLock { self.process }
-        process?.terminate()
+        let process = withLock {
+            isProcessLaunched ? self.process : nil
+        }
+        if process?.isRunning == true {
+            process?.terminate()
+        }
         withLock {
             stdoutTask?.cancel()
             stderrTask?.cancel()
-            continuation?.finish()
-            self.process = nil
+            finishResponsesLocked(throwing: nil)
             self.stdinPipe = nil
             self.isStarting = false
+            if self.process?.isRunning == false {
+                self.process = nil
+                self.isProcessLaunched = false
+            }
         }
     }
 
@@ -113,12 +169,9 @@ internal final class ProcessKataGoTransport: KataGoTransport, @unchecked Sendabl
                         continuation?.yield(Data(line.utf8))
                     }
                 }
-                self?.withLock {
-                    self?.continuation?.finish()
-                }
             } catch {
                 self?.withLock {
-                    self?.continuation?.finish(throwing: error)
+                    self?.finishResponsesLocked(throwing: error)
                 }
             }
         }
@@ -147,22 +200,53 @@ internal final class ProcessKataGoTransport: KataGoTransport, @unchecked Sendabl
     }
 
     private func finishIfTerminated(_ process: Process) {
-        guard process.terminationStatus != 0 else {
-            withLock {
-                continuation?.finish()
+        let exitCode = process.terminationStatus
+        let stdoutTask = withLock { self.stdoutTask }
+        let stderrTask = withLock { self.stderrTask }
+
+        Task { [weak self] in
+            if exitCode == 0 {
+                await stdoutTask?.value
+                self?.withLock {
+                    self?.finishResponsesLocked(throwing: nil)
+                    self?.process = nil
+                    self?.stdinPipe = nil
+                    self?.isStarting = false
+                    self?.isProcessLaunched = false
+                }
+                return
             }
+
+            await stderrTask?.value
+            let tail = self?.withLock { self?.stderrTail } ?? ""
+            self?.withLock {
+                self?.finishResponsesLocked(
+                    throwing: KataGoEngineError.engineTerminated(
+                        exitCode: exitCode,
+                        stderrTail: tail
+                    )
+                )
+                self?.process = nil
+                self?.stdinPipe = nil
+                self?.isStarting = false
+                self?.isProcessLaunched = false
+            }
+        }
+    }
+
+    private func finishResponsesLocked(throwing error: Error?) {
+        guard didFinishResponses == false else {
             return
         }
 
-        let tail = withLock { stderrTail }
-        withLock {
-            continuation?.finish(
-                throwing: KataGoEngineError.engineTerminated(
-                    exitCode: process.terminationStatus,
-                    stderrTail: tail
-                )
-            )
+        didFinishResponses = true
+        responseFinishError = error
+        if let error {
+            continuation?.finish(throwing: error)
+        } else {
+            continuation?.finish()
         }
+        continuation = nil
     }
 
     private func withLock<T>(_ body: () -> T) -> T {
