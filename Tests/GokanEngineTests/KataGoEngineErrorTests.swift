@@ -60,3 +60,19 @@ func transportFactoryReportsMissingModelAndConfig() throws {
     }
 }
 
+@Test
+func kataGoEngineErrorsExposeLocalizedDescriptions() {
+    let errors: [KataGoEngineError] = [
+        .platformUnsupported,
+        .executableMissing(URL(filePath: "/missing/katago")),
+        .modelMissing(URL(filePath: "/missing/model.bin.gz")),
+        .configMissing(URL(filePath: "/missing/analysis.cfg")),
+        .startupFailed(reason: "permission denied"),
+        .protocolViolation(reason: "malformed json"),
+        .engineTerminated(exitCode: 7, stderrTail: "boom"),
+    ]
+
+    for error in errors {
+        #expect(error.localizedDescription == error.description)
+    }
+}

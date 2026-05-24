@@ -45,6 +45,13 @@ public struct AnalysisEngineSelection: Equatable, Sendable {
     }
 }
 
+private enum EngineSettingsDefaultsKey {
+    static let engineKind = "Gokan.analysisEngine.kind"
+    static let executablePath = "Gokan.kataGo.executablePath"
+    static let modelPath = "Gokan.kataGo.modelPath"
+    static let configPath = "Gokan.kataGo.configPath"
+}
+
 public enum EngineStatus: Equatable, Sendable {
     case mock
     case kataGoConfigured
@@ -105,18 +112,31 @@ public final class GokanAppModel {
     public private(set) var engineStatus: EngineStatus = .mock
 
     private let engineFactory: AnalysisEngineFactory
+    private let settingsDefaults: UserDefaults?
+    private var isRestoringEngineSelection = false
 
     public init() {
         self.engineFactory = Self.defaultEngineFactory
+        self.settingsDefaults = .standard
+        restoreEngineSelection(Self.loadPersistedEngineSelection(from: .standard))
         refreshEngineStatus()
     }
 
-    public init(engine: any GoAnalysisEngine) {
+    public init(engine: any GoAnalysisEngine, settingsDefaults: UserDefaults? = nil) {
         self.engineFactory = { _ in engine }
+        self.settingsDefaults = settingsDefaults
+        if let settingsDefaults {
+            restoreEngineSelection(Self.loadPersistedEngineSelection(from: settingsDefaults))
+        }
+        refreshEngineStatus()
     }
 
-    public init(engineFactory: @escaping AnalysisEngineFactory) {
+    public init(engineFactory: @escaping AnalysisEngineFactory, settingsDefaults: UserDefaults? = nil) {
         self.engineFactory = engineFactory
+        self.settingsDefaults = settingsDefaults
+        if let settingsDefaults {
+            restoreEngineSelection(Self.loadPersistedEngineSelection(from: settingsDefaults))
+        }
         refreshEngineStatus()
     }
 
@@ -365,6 +385,11 @@ public final class GokanAppModel {
     }
 
     private func engineSelectionDidChange() {
+        guard isRestoringEngineSelection == false else {
+            return
+        }
+
+        persistEngineSelection()
         refreshEngineStatus()
         analysis = nil
         analysisError = nil
@@ -401,6 +426,35 @@ public final class GokanAppModel {
 
     private func refreshEngineStatus() {
         engineStatus = Self.status(for: AnalysisEngineSelection(kind: engineKind, kataGoSettings: kataGoSettings))
+    }
+
+    private func restoreEngineSelection(_ selection: AnalysisEngineSelection) {
+        isRestoringEngineSelection = true
+        engineKind = selection.kind
+        kataGoSettings = selection.kataGoSettings
+        isRestoringEngineSelection = false
+    }
+
+    private func persistEngineSelection() {
+        guard let settingsDefaults else {
+            return
+        }
+
+        settingsDefaults.set(engineKind.rawValue, forKey: EngineSettingsDefaultsKey.engineKind)
+        settingsDefaults.set(kataGoSettings.executablePath, forKey: EngineSettingsDefaultsKey.executablePath)
+        settingsDefaults.set(kataGoSettings.modelPath, forKey: EngineSettingsDefaultsKey.modelPath)
+        settingsDefaults.set(kataGoSettings.configPath, forKey: EngineSettingsDefaultsKey.configPath)
+    }
+
+    private nonisolated static func loadPersistedEngineSelection(from defaults: UserDefaults) -> AnalysisEngineSelection {
+        let rawKind = defaults.string(forKey: EngineSettingsDefaultsKey.engineKind)
+        let kind = rawKind.flatMap(AnalysisEngineKind.init(rawValue:)) ?? .mock
+        let settings = KataGoPathSettings(
+            executablePath: defaults.string(forKey: EngineSettingsDefaultsKey.executablePath) ?? "",
+            modelPath: defaults.string(forKey: EngineSettingsDefaultsKey.modelPath) ?? "",
+            configPath: defaults.string(forKey: EngineSettingsDefaultsKey.configPath) ?? ""
+        )
+        return AnalysisEngineSelection(kind: kind, kataGoSettings: settings)
     }
 
     private nonisolated static func status(for selection: AnalysisEngineSelection) -> EngineStatus {

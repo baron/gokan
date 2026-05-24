@@ -2,7 +2,7 @@
 
 import Foundation
 
-public enum KataGoEngineError: Error, Sendable, CustomStringConvertible {
+public enum KataGoEngineError: Error, Sendable, CustomStringConvertible, LocalizedError {
     case platformUnsupported
     case executableMissing(URL)
     case modelMissing(URL)
@@ -28,5 +28,9 @@ public enum KataGoEngineError: Error, Sendable, CustomStringConvertible {
         case .engineTerminated(let exitCode, let stderrTail):
             "KataGo terminated with exit code \(exitCode): \(stderrTail)"
         }
+    }
+
+    public var errorDescription: String? {
+        description
     }
 }

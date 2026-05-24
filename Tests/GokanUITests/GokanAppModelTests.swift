@@ -666,6 +666,75 @@ func runtimeFactoryErrorSurfacesAsAnalysisErrorAndEngineStatus() async {
     #expect(model.engineStatus == .error(FactoryError.unavailable.localizedDescription))
 }
 
+@MainActor
+@Test
+func engineSettingsPersistAcrossModelInstances() {
+    let defaults = isolatedDefaults()
+    let settings = KataGoPathSettings(
+        executablePath: "/usr/local/bin/katago",
+        modelPath: "/models/g170.bin.gz",
+        configPath: "/configs/analysis.cfg"
+    )
+    let firstModel = GokanAppModel(engine: SilentAnalysisEngine(), settingsDefaults: defaults.userDefaults)
+
+    firstModel.engineKind = .kataGo
+    firstModel.kataGoSettings = settings
+    let restoredModel = GokanAppModel(engine: SilentAnalysisEngine(), settingsDefaults: defaults.userDefaults)
+
+    #expect(restoredModel.engineKind == .kataGo)
+    #expect(restoredModel.kataGoSettings == settings)
+    #expect(restoredModel.engineStatus == .kataGoConfigured)
+    #expect(restoredModel.analysisRequestVersion == 0)
+}
+
+@MainActor
+@Test
+func persistedIncompleteKataGoSettingsRestoreIncompleteStatus() {
+    let defaults = isolatedDefaults()
+    let firstModel = GokanAppModel(engine: SilentAnalysisEngine(), settingsDefaults: defaults.userDefaults)
+
+    firstModel.engineKind = .kataGo
+    let restoredModel = GokanAppModel(engine: SilentAnalysisEngine(), settingsDefaults: defaults.userDefaults)
+
+    #expect(restoredModel.engineKind == .kataGo)
+    #expect(restoredModel.kataGoSettings == KataGoPathSettings())
+    #expect(restoredModel.engineStatus == .kataGoIncomplete(missingFields: ["executable path", "model path", "config path"]))
+    #expect(restoredModel.analysisRequestVersion == 0)
+}
+
+@MainActor
+@Test
+func unknownPersistedEngineKindFallsBackToMock() {
+    let defaults = isolatedDefaults()
+    defaults.userDefaults.set("future-engine", forKey: "Gokan.analysisEngine.kind")
+    defaults.userDefaults.set("/tmp/katago", forKey: "Gokan.kataGo.executablePath")
+
+    let model = GokanAppModel(engine: SilentAnalysisEngine(), settingsDefaults: defaults.userDefaults)
+
+    #expect(model.engineKind == .mock)
+    #expect(model.kataGoSettings.executablePath == "/tmp/katago")
+    #expect(model.engineStatus == .mock)
+    #expect(model.analysisRequestVersion == 0)
+}
+
+@MainActor
+@Test
+func nonPersistentInjectedModelsDoNotShareEngineSettings() {
+    let firstModel = GokanAppModel(engine: SilentAnalysisEngine())
+    firstModel.engineKind = .kataGo
+    firstModel.kataGoSettings = KataGoPathSettings(
+        executablePath: "/usr/local/bin/katago",
+        modelPath: "/models/g170.bin.gz",
+        configPath: "/configs/analysis.cfg"
+    )
+
+    let secondModel = GokanAppModel(engine: SilentAnalysisEngine())
+
+    #expect(secondModel.engineKind == .mock)
+    #expect(secondModel.kataGoSettings == KataGoPathSettings())
+    #expect(secondModel.engineStatus == .mock)
+}
+
 private struct SilentAnalysisEngine: GoAnalysisEngine {
     func analyze(_ request: AnalysisRequest) async throws -> AsyncThrowingStream<AnalysisSnapshot, Error> {
         AsyncThrowingStream { continuation in
@@ -764,6 +833,29 @@ private final class EngineFactoryProbe: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return body()
+    }
+}
+
+private func isolatedDefaults() -> IsolatedDefaults {
+    let suiteName = "GokanAppModelTests.\(UUID().uuidString)"
+    guard let userDefaults = UserDefaults(suiteName: suiteName) else {
+        fatalError("Could not create isolated UserDefaults suite.")
+    }
+    userDefaults.removePersistentDomain(forName: suiteName)
+    return IsolatedDefaults(suiteName: suiteName, userDefaults: userDefaults)
+}
+
+private final class IsolatedDefaults {
+    let suiteName: String
+    let userDefaults: UserDefaults
+
+    init(suiteName: String, userDefaults: UserDefaults) {
+        self.suiteName = suiteName
+        self.userDefaults = userDefaults
+    }
+
+    deinit {
+        userDefaults.removePersistentDomain(forName: suiteName)
     }
 }
 
