@@ -17,7 +17,12 @@ final class GokanSmokeUITests: XCTestCase {
         let moveCount = app.staticTexts["gokan.move-count"]
         XCTAssertTrue(moveCount.waitForExistence(timeout: 30))
         XCTAssertTrue(waitFor(moveCount, toContain: "Move 1 / 1"))
-        XCTAssertTrue(app.staticTexts["gokan.analysis-visits"].waitForExistence(timeout: 30))
+        let diagnosticsStatus = app.staticTexts["gokan.analysis-diagnostics-status"]
+        XCTAssertTrue(diagnosticsStatus.waitForExistence(timeout: 30))
+        XCTAssertTrue(waitFor(diagnosticsStatus, toContain: "Succeeded"))
+        let completedVisits = app.staticTexts["gokan.analysis-diagnostics-completed-visits"]
+        XCTAssertTrue(completedVisits.waitForExistence(timeout: 30))
+        XCTAssertTrue(app.buttons["Play Candidate"].waitForExistence(timeout: 30))
     }
 
     @MainActor

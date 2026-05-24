@@ -102,6 +102,7 @@ public final class GokanAppModel {
     public private(set) var positionVersion = 0
     public private(set) var analysisRequestVersion = 0
     public private(set) var selectedAnalysisCandidatePoint: BoardPoint?
+    public private(set) var analysisDiagnostics: AnalysisRunDiagnostics?
     public var engineKind: AnalysisEngineKind = .mock {
         didSet {
             engineSelectionDidChange()
@@ -351,30 +352,109 @@ public final class GokanAppModel {
         let version = positionVersion
         let analysisVersion = analysisRequestVersion
         let currentGame = game
+        let request = AnalysisRequest(board: currentGame.board, moves: currentGame.appliedMoves)
+        let runID = UUID()
+        let startedAt = Date()
+        analysisDiagnostics = AnalysisRunDiagnostics(
+            id: runID,
+            engineKind: engineKind,
+            boardSize: currentGame.board.size,
+            moveIndex: currentGame.currentMoveIndex,
+            moveCount: currentGame.moves.count,
+            requestedVisits: request.visits,
+            startedAt: startedAt
+        )
+
         do {
             let engine = try makeAnalysisEngine()
-            let request = AnalysisRequest(board: currentGame.board, moves: currentGame.appliedMoves)
             let stream = try await engine.analyze(request)
             for try await snapshot in stream {
-                guard Task.isCancelled == false,
-                      version == positionVersion,
-                      analysisVersion == analysisRequestVersion else {
+                if Task.isCancelled {
+                    finishDiagnosticsIfCurrent(
+                        runID: runID,
+                        version: version,
+                        analysisVersion: analysisVersion,
+                        startedAt: startedAt,
+                        outcome: .cancelled
+                    )
+                    return
+                }
+
+                guard isCurrentAnalysisRun(
+                    runID: runID,
+                    version: version,
+                    analysisVersion: analysisVersion
+                ) else {
                     return
                 }
                 analysis = snapshot
+                updateDiagnosticsIfCurrent(runID: runID) { diagnostics in
+                    diagnostics.snapshotsReceived += 1
+                    diagnostics.completedVisits = snapshot.completedVisits
+                    diagnostics.candidateCount = snapshot.candidateMoves.count
+                    diagnostics.scoreLead = snapshot.scoreLead
+                }
             }
-        } catch {
-            guard Task.isCancelled == false,
-                  version == positionVersion,
-                  analysisVersion == analysisRequestVersion else {
+
+            if Task.isCancelled {
+                finishDiagnosticsIfCurrent(
+                    runID: runID,
+                    version: version,
+                    analysisVersion: analysisVersion,
+                    startedAt: startedAt,
+                    outcome: .cancelled
+                )
                 return
             }
+
+            guard isCurrentAnalysisRun(
+                runID: runID,
+                version: version,
+                analysisVersion: analysisVersion
+            ) else {
+                return
+            }
+
+            finishDiagnosticsIfCurrent(
+                runID: runID,
+                version: version,
+                analysisVersion: analysisVersion,
+                startedAt: startedAt,
+                outcome: .succeeded
+            )
+        } catch {
+            if Task.isCancelled || error is CancellationError {
+                finishDiagnosticsIfCurrent(
+                    runID: runID,
+                    version: version,
+                    analysisVersion: analysisVersion,
+                    startedAt: startedAt,
+                    outcome: .cancelled
+                )
+                return
+            }
+
+            guard isCurrentAnalysisRun(
+                runID: runID,
+                version: version,
+                analysisVersion: analysisVersion
+            ) else {
+                return
+            }
+
             if let engineStatus = error as? EngineStatus {
                 self.engineStatus = engineStatus
             } else {
                 engineStatus = .error(error.localizedDescription)
             }
             analysisError = error.localizedDescription
+            finishDiagnosticsIfCurrent(
+                runID: runID,
+                version: version,
+                analysisVersion: analysisVersion,
+                startedAt: startedAt,
+                outcome: .failed(message: error.localizedDescription)
+            )
         }
     }
 
@@ -393,6 +473,7 @@ public final class GokanAppModel {
         self.selectedPoint = selectedPoint
         analysis = nil
         analysisError = nil
+        analysisDiagnostics = nil
         documentError = nil
         if clearDocumentText {
             sgfText = ""
@@ -411,7 +492,54 @@ public final class GokanAppModel {
         refreshEngineStatus()
         analysis = nil
         analysisError = nil
+        analysisDiagnostics = nil
         analysisRequestVersion += 1
+    }
+
+    private func isCurrentAnalysisRun(
+        runID: UUID,
+        version: Int,
+        analysisVersion: Int
+    ) -> Bool {
+        analysisDiagnostics?.id == runID
+            && version == positionVersion
+            && analysisVersion == analysisRequestVersion
+    }
+
+    private func updateDiagnosticsIfCurrent(
+        runID: UUID,
+        _ update: (inout AnalysisRunDiagnostics) -> Void
+    ) {
+        guard var diagnostics = analysisDiagnostics,
+              diagnostics.id == runID else {
+            return
+        }
+
+        update(&diagnostics)
+        analysisDiagnostics = diagnostics
+    }
+
+    private func finishDiagnosticsIfCurrent(
+        runID: UUID,
+        version: Int,
+        analysisVersion: Int,
+        startedAt: Date,
+        outcome: AnalysisRunOutcome
+    ) {
+        guard isCurrentAnalysisRun(
+            runID: runID,
+            version: version,
+            analysisVersion: analysisVersion
+        ) else {
+            return
+        }
+
+        let finishedAt = Date()
+        updateDiagnosticsIfCurrent(runID: runID) { diagnostics in
+            diagnostics.finishedAt = finishedAt
+            diagnostics.durationSeconds = max(0, finishedAt.timeIntervalSince(startedAt))
+            diagnostics.outcome = outcome
+        }
     }
 
     private func reconcileSelectedAnalysisCandidate() {

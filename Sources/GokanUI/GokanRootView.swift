@@ -178,6 +178,41 @@ private struct SidebarView: View {
                 }
             }
 
+            if let diagnostics = model.analysisDiagnostics {
+                Section("Diagnostics") {
+                    Label(diagnosticsOutcomeTitle(for: diagnostics.outcome), systemImage: diagnosticsOutcomeSystemImage(for: diagnostics.outcome))
+                        .foregroundStyle(diagnosticsOutcomeColor(for: diagnostics.outcome))
+                        .accessibilityIdentifier("gokan.analysis-diagnostics-status")
+                    Label(diagnostics.engineKind.displayName, systemImage: "cpu")
+                        .accessibilityIdentifier("gokan.analysis-diagnostics-engine")
+                    Label(
+                        "\(diagnostics.boardSize.width)x\(diagnostics.boardSize.height), move \(diagnostics.moveIndex) / \(diagnostics.moveCount)",
+                        systemImage: "scope"
+                    )
+                    .accessibilityIdentifier("gokan.analysis-diagnostics-position")
+                    Label("\(diagnostics.requestedVisits) requested visits", systemImage: "speedometer")
+                        .accessibilityIdentifier("gokan.analysis-diagnostics-requested-visits")
+                    Label(snapshotsTitle(for: diagnostics.snapshotsReceived), systemImage: "waveform.path")
+                        .accessibilityIdentifier("gokan.analysis-diagnostics-snapshots")
+
+                    if let completedVisits = diagnostics.completedVisits {
+                        Label("\(completedVisits) completed visits", systemImage: "checkmark.seal")
+                            .accessibilityIdentifier("gokan.analysis-diagnostics-completed-visits")
+                    }
+
+                    if let durationSeconds = diagnostics.durationSeconds {
+                        Label(durationTitle(for: durationSeconds), systemImage: "timer")
+                            .accessibilityIdentifier("gokan.analysis-diagnostics-duration")
+                    }
+
+                    if case .failed(let message) = diagnostics.outcome {
+                        Label(message, systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.red)
+                            .accessibilityIdentifier("gokan.analysis-diagnostics-error")
+                    }
+                }
+            }
+
             Section("SGF") {
                 Button {
                     isImportingSGF = true
@@ -312,6 +347,57 @@ private struct SidebarView: View {
         case .error:
             .red
         }
+    }
+
+    private func diagnosticsOutcomeTitle(for outcome: AnalysisRunOutcome) -> String {
+        switch outcome {
+        case .running:
+            "Running"
+        case .succeeded:
+            "Succeeded"
+        case .failed:
+            "Failed"
+        case .cancelled:
+            "Cancelled"
+        }
+    }
+
+    private func diagnosticsOutcomeSystemImage(for outcome: AnalysisRunOutcome) -> String {
+        switch outcome {
+        case .running:
+            "hourglass"
+        case .succeeded:
+            "checkmark.circle"
+        case .failed:
+            "xmark.octagon"
+        case .cancelled:
+            "pause.circle"
+        }
+    }
+
+    private func diagnosticsOutcomeColor(for outcome: AnalysisRunOutcome) -> Color {
+        switch outcome {
+        case .running:
+            .blue
+        case .succeeded:
+            .green
+        case .failed:
+            .red
+        case .cancelled:
+            .orange
+        }
+    }
+
+    private func snapshotsTitle(for count: Int) -> String {
+        count == 1 ? "1 snapshot" : "\(count) snapshots"
+    }
+
+    private func durationTitle(for durationSeconds: Double) -> String {
+        if durationSeconds < 1 {
+            return "\(Int((durationSeconds * 1_000).rounded())) ms"
+        }
+
+        return String(format: "%.2f s", durationSeconds)
     }
 }
 

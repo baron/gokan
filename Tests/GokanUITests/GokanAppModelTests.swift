@@ -383,6 +383,49 @@ func analysisRequestUsesDirectJumpPrefix() async {
 
 @MainActor
 @Test
+func successfulAnalysisRecordsDiagnostics() async throws {
+    let finalPoint = BoardPoint(x: 4, y: 4)
+    let engine = ScriptedAnalysisEngine(
+        snapshots: [
+            AnalysisSnapshot(
+                candidateMoves: [
+                    CandidateMove(point: BoardPoint(x: 3, y: 3), policy: 0.4, winRate: 0.51, visits: 7),
+                ],
+                scoreLead: -0.5,
+                completedVisits: 10
+            ),
+            AnalysisSnapshot(
+                candidateMoves: [
+                    CandidateMove(point: finalPoint, policy: 0.5, winRate: 0.58, visits: 80),
+                    CandidateMove(point: BoardPoint(x: 5, y: 5), policy: 0.2, winRate: 0.54, visits: 30),
+                ],
+                scoreLead: 2.25,
+                completedVisits: 100
+            ),
+        ]
+    )
+    let model = GokanAppModel(engine: engine)
+
+    await model.analyze()
+
+    let diagnostics = try #require(model.analysisDiagnostics)
+    #expect(diagnostics.outcome == .succeeded)
+    #expect(diagnostics.engineKind == .mock)
+    #expect(diagnostics.boardSize == model.game.board.size)
+    #expect(diagnostics.moveIndex == model.game.currentMoveIndex)
+    #expect(diagnostics.moveCount == model.game.moves.count)
+    #expect(diagnostics.requestedVisits == 400)
+    #expect(diagnostics.snapshotsReceived == 2)
+    #expect(diagnostics.completedVisits == 100)
+    #expect(diagnostics.candidateCount == 2)
+    #expect(diagnostics.scoreLead == 2.25)
+    #expect(diagnostics.finishedAt != nil)
+    #expect(try #require(diagnostics.durationSeconds) >= 0)
+    #expect(model.analysis?.candidateMoves.first?.point == finalPoint)
+}
+
+@MainActor
+@Test
 func staleAnalysisDoesNotOverwriteNewerPosition() async throws {
     let engine = ControlledAnalysisEngine()
     let model = GokanAppModel(engine: engine)
@@ -395,6 +438,7 @@ func staleAnalysisDoesNotOverwriteNewerPosition() async throws {
         try await Task.sleep(nanoseconds: 1_000_000)
     }
 
+    #expect(model.analysisDiagnostics?.outcome == .running)
     model.play(at: BoardPoint(x: 0, y: 0))
     engine.yield(
         AnalysisSnapshot(
@@ -407,6 +451,33 @@ func staleAnalysisDoesNotOverwriteNewerPosition() async throws {
     await analysisTask.value
 
     #expect(model.analysis == nil)
+    #expect(model.analysisDiagnostics == nil)
+}
+
+@MainActor
+@Test
+func cancelledAnalysisMarksDiagnosticsCancelled() async throws {
+    let engine = ControlledAnalysisEngine()
+    let model = GokanAppModel(engine: engine)
+
+    let analysisTask = Task {
+        await model.analyze()
+    }
+
+    while engine.hasContinuation == false {
+        try await Task.sleep(nanoseconds: 1_000_000)
+    }
+
+    #expect(model.analysisDiagnostics?.outcome == .running)
+    analysisTask.cancel()
+    engine.finish()
+    await analysisTask.value
+
+    let diagnostics = try #require(model.analysisDiagnostics)
+    #expect(diagnostics.outcome == .cancelled)
+    #expect(diagnostics.snapshotsReceived == 0)
+    #expect(diagnostics.finishedAt != nil)
+    #expect(model.analysisError == nil)
 }
 
 @MainActor
@@ -510,6 +581,18 @@ func positionChangeClearsSelectedAnalysisCandidate() {
 
 @MainActor
 @Test
+func positionChangeClearsAnalysisDiagnostics() async {
+    let model = GokanAppModel(engine: ScriptedAnalysisEngine(snapshots: [snapshot(with: [BoardPoint(x: 3, y: 3)])]))
+    await model.analyze()
+    #expect(model.analysisDiagnostics != nil)
+
+    model.play(at: BoardPoint(x: 4, y: 4))
+
+    #expect(model.analysisDiagnostics == nil)
+}
+
+@MainActor
+@Test
 func engineSettingChangeClearsSelectedAnalysisCandidate() {
     let model = GokanAppModel(engine: SilentAnalysisEngine())
     model.analysis = snapshot(with: [BoardPoint(x: 3, y: 3)])
@@ -519,6 +602,18 @@ func engineSettingChangeClearsSelectedAnalysisCandidate() {
     #expect(model.analysis == nil)
     #expect(model.selectedAnalysisCandidatePoint == nil)
     #expect(model.selectedAnalysisCandidate == nil)
+}
+
+@MainActor
+@Test
+func engineSettingChangeClearsAnalysisDiagnostics() async {
+    let model = GokanAppModel(engine: ScriptedAnalysisEngine(snapshots: [snapshot(with: [BoardPoint(x: 3, y: 3)])]))
+    await model.analyze()
+    #expect(model.analysisDiagnostics != nil)
+
+    model.engineKind = .kataGo
+
+    #expect(model.analysisDiagnostics == nil)
 }
 
 @MainActor
@@ -607,6 +702,12 @@ func selectingKataGoWithMissingPathsReportsIncompleteStatus() async {
     #expect(model.engineStatus == .kataGoIncomplete(missingFields: ["executable path", "model path", "config path"]))
     #expect(model.analysisError == EngineStatus.kataGoIncomplete(missingFields: ["executable path", "model path", "config path"]).message)
     #expect(probe.callCount == 0)
+    #expect(
+        model.analysisDiagnostics?.outcome
+            == .failed(message: EngineStatus.kataGoIncomplete(missingFields: ["executable path", "model path", "config path"]).message)
+    )
+    #expect(model.analysisDiagnostics?.engineKind == .kataGo)
+    #expect(model.analysisDiagnostics?.snapshotsReceived == 0)
 }
 
 @MainActor
@@ -692,6 +793,9 @@ func runtimeFactoryErrorSurfacesAsAnalysisErrorAndEngineStatus() async {
 
     #expect(model.analysisError == FactoryError.unavailable.localizedDescription)
     #expect(model.engineStatus == .error(FactoryError.unavailable.localizedDescription))
+    #expect(model.analysisDiagnostics?.outcome == .failed(message: FactoryError.unavailable.localizedDescription))
+    #expect(model.analysisDiagnostics?.snapshotsReceived == 0)
+    #expect(model.analysisDiagnostics?.durationSeconds != nil)
 }
 
 @MainActor
@@ -782,6 +886,19 @@ func nonPersistentInjectedModelsDoNotShareEngineSettings() {
 private struct SilentAnalysisEngine: GoAnalysisEngine {
     func analyze(_ request: AnalysisRequest) async throws -> AsyncThrowingStream<AnalysisSnapshot, Error> {
         AsyncThrowingStream { continuation in
+            continuation.finish()
+        }
+    }
+}
+
+private struct ScriptedAnalysisEngine: GoAnalysisEngine {
+    let snapshots: [AnalysisSnapshot]
+
+    func analyze(_ request: AnalysisRequest) async throws -> AsyncThrowingStream<AnalysisSnapshot, Error> {
+        AsyncThrowingStream { continuation in
+            for snapshot in snapshots {
+                continuation.yield(snapshot)
+            }
             continuation.finish()
         }
     }
