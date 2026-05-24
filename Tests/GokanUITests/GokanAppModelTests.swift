@@ -139,6 +139,89 @@ func staleAnalysisDoesNotOverwriteNewerPosition() async throws {
     #expect(model.analysis == nil)
 }
 
+@MainActor
+@Test
+func modelDefaultsToMockEngineStatus() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+
+    #expect(model.engineKind == .mock)
+    #expect(model.engineStatus == .mock)
+}
+
+@MainActor
+@Test
+func selectingKataGoWithMissingPathsReportsIncompleteStatus() async {
+    let probe = EngineFactoryProbe()
+    let model = GokanAppModel(engineFactory: probe.makeEngine(selection:))
+
+    model.engineKind = .kataGo
+    await model.analyze()
+
+    #expect(model.engineStatus == .kataGoIncomplete(missingFields: ["executable path", "model path", "config path"]))
+    #expect(model.analysisError == EngineStatus.kataGoIncomplete(missingFields: ["executable path", "model path", "config path"]).message)
+    #expect(probe.callCount == 0)
+}
+
+@MainActor
+@Test
+func configuredKataGoSelectionIsPassedToEngineFactory() throws {
+    let probe = EngineFactoryProbe()
+    let model = GokanAppModel(engineFactory: probe.makeEngine(selection:))
+
+    model.engineKind = .kataGo
+    model.kataGoSettings = KataGoPathSettings(
+        executablePath: "/usr/local/bin/katago",
+        modelPath: "/models/model.bin.gz",
+        configPath: "/configs/analysis.cfg"
+    )
+    _ = try model.makeAnalysisEngine()
+
+    #expect(model.engineStatus == .kataGoConfigured)
+    #expect(probe.callCount == 1)
+    #expect(
+        probe.lastSelection == AnalysisEngineSelection(
+            kind: .kataGo,
+            kataGoSettings: KataGoPathSettings(
+                executablePath: "/usr/local/bin/katago",
+                modelPath: "/models/model.bin.gz",
+                configPath: "/configs/analysis.cfg"
+            )
+        )
+    )
+}
+
+@MainActor
+@Test
+func engineSettingChangesClearStaleAnalysisAndRetriggerAnalysis() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    model.analysis = AnalysisSnapshot(
+        candidateMoves: [CandidateMove(point: BoardPoint(x: 4, y: 4), policy: 0.5, winRate: 0.5, visits: 10)],
+        scoreLead: 1,
+        completedVisits: 10
+    )
+    model.analysisError = "old error"
+    let originalVersion = model.analysisRequestVersion
+
+    model.engineKind = .kataGo
+
+    #expect(model.analysis == nil)
+    #expect(model.analysisError == nil)
+    #expect(model.analysisRequestVersion == originalVersion + 1)
+}
+
+@MainActor
+@Test
+func runtimeFactoryErrorSurfacesAsAnalysisErrorAndEngineStatus() async {
+    let model = GokanAppModel { _ in
+        throw FactoryError.unavailable
+    }
+
+    await model.analyze()
+
+    #expect(model.analysisError == FactoryError.unavailable.localizedDescription)
+    #expect(model.engineStatus == .error(FactoryError.unavailable.localizedDescription))
+}
+
 private struct SilentAnalysisEngine: GoAnalysisEngine {
     func analyze(_ request: AnalysisRequest) async throws -> AsyncThrowingStream<AnalysisSnapshot, Error> {
         AsyncThrowingStream { continuation in
@@ -181,5 +264,43 @@ private final class ControlledAnalysisEngine: GoAnalysisEngine, @unchecked Senda
         lock.lock()
         defer { lock.unlock() }
         return body()
+    }
+}
+
+private final class EngineFactoryProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var selections: [AnalysisEngineSelection] = []
+
+    var callCount: Int {
+        withLock {
+            selections.count
+        }
+    }
+
+    var lastSelection: AnalysisEngineSelection? {
+        withLock {
+            selections.last
+        }
+    }
+
+    func makeEngine(selection: AnalysisEngineSelection) throws -> any GoAnalysisEngine {
+        withLock {
+            selections.append(selection)
+        }
+        return SilentAnalysisEngine()
+    }
+
+    private func withLock<T>(_ body: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
+    }
+}
+
+private enum FactoryError: LocalizedError {
+    case unavailable
+
+    var errorDescription: String? {
+        "Factory unavailable"
     }
 }

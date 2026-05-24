@@ -15,7 +15,7 @@ public struct GokanRootView: View {
         } detail: {
             BoardWorkspaceView(model: model)
         }
-        .task(id: model.positionVersion) {
+        .task(id: model.analysisRequestVersion) {
             await model.analyze()
         }
     }
@@ -56,6 +56,35 @@ private struct SidebarView: View {
                 }
             }
 
+            Section("Engine") {
+                Picker("Engine", selection: $model.engineKind) {
+                    ForEach(AnalysisEngineKind.allCases) { kind in
+                        Text(kind.displayName)
+                            .tag(kind)
+                    }
+                }
+
+                if model.engineKind == .kataGo {
+                    TextField("Executable path", text: $model.kataGoSettings.executablePath)
+                        .textFieldStyle(.roundedBorder)
+                    TextField("Model path", text: $model.kataGoSettings.modelPath)
+                        .textFieldStyle(.roundedBorder)
+                    TextField("Config path", text: $model.kataGoSettings.configPath)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                Label(model.engineStatus.message, systemImage: engineStatusSystemImage)
+                    .foregroundStyle(engineStatusColor)
+
+                Button {
+                    Task {
+                        await model.analyze()
+                    }
+                } label: {
+                    Label("Analyze Now", systemImage: "play.circle")
+                }
+            }
+
             Section("SGF") {
                 TextEditor(text: $model.sgfText)
                     .font(.system(.caption, design: .monospaced))
@@ -93,6 +122,32 @@ private struct SidebarView: View {
         }
         .navigationTitle("Gokan")
         .listStyle(.sidebar)
+    }
+
+    private var engineStatusSystemImage: String {
+        switch model.engineStatus {
+        case .mock:
+            "testtube.2"
+        case .kataGoConfigured:
+            "checkmark.circle"
+        case .kataGoIncomplete:
+            "exclamationmark.triangle"
+        case .error:
+            "xmark.octagon"
+        }
+    }
+
+    private var engineStatusColor: Color {
+        switch model.engineStatus {
+        case .mock:
+            .secondary
+        case .kataGoConfigured:
+            .green
+        case .kataGoIncomplete:
+            .orange
+        case .error:
+            .red
+        }
     }
 }
 
