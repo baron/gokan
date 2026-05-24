@@ -1,0 +1,131 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+import Foundation
+import Testing
+import GokanModels
+
+@Test
+func catalogDecodesValidMetadataAndRoundTrips() throws {
+    let data = Data(
+        """
+        {
+          "schemaVersion": 1,
+          "profiles": [
+            {
+              "id": "tiny-dev",
+              "displayName": "Tiny Dev Model",
+              "description": "Fixture-sized profile metadata.",
+              "modelFileName": "tiny.bin.gz",
+              "defaultConfigFileName": "analysis.cfg",
+              "expectedByteCount": 5,
+              "checksum": {
+                "algorithm": "sha256",
+                "value": "2CF24DBA5FB0A30E26E83B2AC5B9E29E1B161E5C1FA7425E73043362938B9824"
+              },
+              "license": {
+                "name": "Model notice",
+                "noticeURL": "https://example.com/model-notice"
+              },
+              "supportedBoardSizes": [
+                { "width": 19, "height": 19 }
+              ],
+              "deviceSuitability": [
+                { "platform": "macOS", "tier": "small", "note": "Fixture only" }
+              ]
+            }
+          ]
+        }
+        """.utf8
+    )
+
+    let catalog = try GokanModelCatalog.decode(from: data)
+    let profile = try #require(catalog.profile(id: "tiny-dev"))
+    let encoded = try catalog.encode()
+    let decodedAgain = try GokanModelCatalog.decode(from: encoded)
+
+    #expect(catalog == decodedAgain)
+    #expect(profile.displayName == "Tiny Dev Model")
+    #expect(profile.modelFileName == "tiny.bin.gz")
+    #expect(profile.defaultConfigFileName == "analysis.cfg")
+    #expect(profile.checksum?.value == "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824")
+    #expect(profile.license.name == "Model notice")
+    #expect(profile.supportedBoardSizes == [GokanModelBoardSize(width: 19, height: 19)])
+    #expect(profile.deviceSuitability == [
+        GokanDeviceSuitability(platform: .macOS, tier: .small, note: "Fixture only"),
+    ])
+}
+
+@Test
+func catalogRejectsUnsupportedSchemaVersion() {
+    #expect(throws: GokanModelCatalogError.unsupportedSchemaVersion(2)) {
+        try GokanModelCatalog(schemaVersion: 2, profiles: [])
+    }
+}
+
+@Test
+func catalogRejectsDuplicateProfileIDs() throws {
+    let profile = try fixtureProfile(id: "duplicate")
+
+    #expect(throws: GokanModelCatalogError.duplicateProfileID("duplicate")) {
+        try GokanModelCatalog(profiles: [profile, profile])
+    }
+}
+
+@Test(
+    arguments: [
+        "",
+        ".",
+        "..",
+        " tiny.bin.gz ",
+        "../model.bin.gz",
+        "models/model.bin.gz",
+        "models\\model.bin.gz",
+    ]
+)
+func catalogRejectsUnsafeModelFileNames(fileName: String) throws {
+    let profile = try fixtureProfile(modelFileName: fileName)
+
+    #expect(throws: GokanModelCatalogError.self) {
+        try GokanModelCatalog(profiles: [profile])
+    }
+}
+
+@Test
+func checksumRejectsInvalidSHA256() {
+    #expect(throws: GokanModelChecksumError.invalidSHA256("not-a-sha")) {
+        try GokanModelChecksum(sha256: "not-a-sha")
+    }
+}
+
+@Test
+func catalogRejectsWhitespacePaddedProfileIdentity() throws {
+    #expect(throws: GokanModelCatalogError.self) {
+        try GokanModelCatalog(profiles: [try fixtureProfile(id: " tiny-dev")])
+    }
+    #expect(throws: GokanModelCatalogError.self) {
+        try GokanModelCatalog(
+            profiles: [
+                GokanModelProfile(
+                    id: "tiny-dev",
+                    displayName: " Tiny Dev Model ",
+                    modelFileName: "tiny.bin.gz",
+                    license: GokanModelLicense(name: "Fixture")
+                ),
+            ]
+        )
+    }
+}
+
+private func fixtureProfile(
+    id: String = "tiny-dev",
+    modelFileName: String = "tiny.bin.gz"
+) throws -> GokanModelProfile {
+    GokanModelProfile(
+        id: id,
+        displayName: "Tiny Dev Model",
+        modelFileName: modelFileName,
+        defaultConfigFileName: "analysis.cfg",
+        checksum: try GokanModelChecksum(sha256: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"),
+        license: GokanModelLicense(name: "Fixture")
+    )
+}

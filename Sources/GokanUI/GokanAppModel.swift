@@ -3,6 +3,7 @@
 import Foundation
 import GokanCore
 import GokanEngine
+import GokanModels
 import Observation
 
 public enum AnalysisEngineKind: String, CaseIterable, Identifiable, Sendable {
@@ -38,10 +39,70 @@ public struct KataGoPathSettings: Equatable, Sendable {
 public struct AnalysisEngineSelection: Equatable, Sendable {
     public var kind: AnalysisEngineKind
     public var kataGoSettings: KataGoPathSettings
+    public var kataGoModelSettings: KataGoModelSettings
+    public var resolvedKataGoConfiguration: KataGoEngineConfiguration?
 
-    public init(kind: AnalysisEngineKind, kataGoSettings: KataGoPathSettings) {
+    public init(
+        kind: AnalysisEngineKind,
+        kataGoSettings: KataGoPathSettings,
+        kataGoModelSettings: KataGoModelSettings = KataGoModelSettings(),
+        resolvedKataGoConfiguration: KataGoEngineConfiguration? = nil
+    ) {
         self.kind = kind
         self.kataGoSettings = kataGoSettings
+        self.kataGoModelSettings = kataGoModelSettings
+        self.resolvedKataGoConfiguration = resolvedKataGoConfiguration
+    }
+}
+
+public struct KataGoModelSettings: Equatable, Sendable {
+    public var selectedProfileID: String
+    public var cacheRootPath: String
+
+    public init(selectedProfileID: String = "", cacheRootPath: String = "") {
+        self.selectedProfileID = selectedProfileID
+        self.cacheRootPath = cacheRootPath
+    }
+}
+
+public enum KataGoModelStatus: Equatable, Sendable {
+    case notSelected
+    case manualPath(path: String)
+    case profileReady(profileID: String, displayName: String, modelPath: String, configPath: String?)
+    case profileUnavailable(profileID: String)
+    case missingCacheRoot(profileID: String)
+    case missingCachedModel(profileID: String, path: String)
+    case missingCachedConfig(profileID: String, path: String)
+    case checksumUnavailable(profileID: String)
+    case checksumVerified(profileID: String, sha256: String)
+    case checksumMismatch(profileID: String, expected: String, actual: String)
+    case verificationFailed(profileID: String, message: String)
+
+    public var message: String {
+        switch self {
+        case .notSelected:
+            "No model profile selected."
+        case .manualPath(let path):
+            "Using manual model path: \(path)"
+        case .profileReady(_, let displayName, let modelPath, _):
+            "\(displayName) is available at \(modelPath)."
+        case .profileUnavailable(let profileID):
+            "Model profile \(profileID) is not in the catalog."
+        case .missingCacheRoot:
+            "Model cache root is not configured."
+        case .missingCachedModel(_, let path):
+            "Cached model file is missing at \(path)."
+        case .missingCachedConfig(_, let path):
+            "Cached config file is missing at \(path)."
+        case .checksumUnavailable:
+            "No checksum is available for the selected model profile."
+        case .checksumVerified(_, let sha256):
+            "Model checksum verified: \(sha256)."
+        case .checksumMismatch(_, let expected, let actual):
+            "Model checksum mismatch. Expected \(expected), got \(actual)."
+        case .verificationFailed(_, let message):
+            message
+        }
     }
 }
 
@@ -50,6 +111,8 @@ private enum EngineSettingsDefaultsKey {
     static let executablePath = "Gokan.kataGo.executablePath"
     static let modelPath = "Gokan.kataGo.modelPath"
     static let configPath = "Gokan.kataGo.configPath"
+    static let modelProfileID = "Gokan.kataGo.modelProfileID"
+    static let modelCacheRootPath = "Gokan.kataGo.modelCacheRootPath"
 }
 
 public enum EngineStatus: Equatable, Sendable {
@@ -113,14 +176,22 @@ public final class GokanAppModel {
             engineSelectionDidChange()
         }
     }
+    public var kataGoModelSettings = KataGoModelSettings() {
+        didSet {
+            engineSelectionDidChange()
+        }
+    }
     public private(set) var engineStatus: EngineStatus = .mock
+    public private(set) var kataGoModelStatus: KataGoModelStatus = .notSelected
+    public private(set) var modelCatalog: GokanModelCatalog
 
     private let engineFactory: AnalysisEngineFactory
     private let settingsDefaults: UserDefaults?
     private let supportsKataGoSubprocess: Bool
     private var isRestoringEngineSelection = false
 
-    public init() {
+    public init(modelCatalog: GokanModelCatalog = .empty) {
+        self.modelCatalog = modelCatalog
         self.engineFactory = Self.defaultEngineFactory
         self.settingsDefaults = .standard
         self.supportsKataGoSubprocess = Self.defaultSupportsKataGoSubprocess
@@ -131,8 +202,10 @@ public final class GokanAppModel {
     public init(
         engine: any GoAnalysisEngine,
         settingsDefaults: UserDefaults? = nil,
-        supportsKataGoSubprocess: Bool? = nil
+        supportsKataGoSubprocess: Bool? = nil,
+        modelCatalog: GokanModelCatalog = .empty
     ) {
+        self.modelCatalog = modelCatalog
         self.engineFactory = { _ in engine }
         self.settingsDefaults = settingsDefaults
         self.supportsKataGoSubprocess = supportsKataGoSubprocess ?? Self.defaultSupportsKataGoSubprocess
@@ -145,8 +218,10 @@ public final class GokanAppModel {
     public init(
         engineFactory: @escaping AnalysisEngineFactory,
         settingsDefaults: UserDefaults? = nil,
-        supportsKataGoSubprocess: Bool? = nil
+        supportsKataGoSubprocess: Bool? = nil,
+        modelCatalog: GokanModelCatalog = .empty
     ) {
+        self.modelCatalog = modelCatalog
         self.engineFactory = engineFactory
         self.settingsDefaults = settingsDefaults
         self.supportsKataGoSubprocess = supportsKataGoSubprocess ?? Self.defaultSupportsKataGoSubprocess
@@ -364,6 +439,34 @@ public final class GokanAppModel {
         try SGFFileDocument(text: exportSGFText()).data()
     }
 
+    public func verifySelectedKataGoModelChecksum() async {
+        guard kataGoSettings.modelPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            kataGoModelStatus = .manualPath(path: kataGoSettings.modelPath)
+            return
+        }
+        guard let profile = selectedModelProfile() else {
+            if kataGoModelSettings.selectedProfileID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                kataGoModelStatus = .notSelected
+            } else {
+                kataGoModelStatus = .profileUnavailable(profileID: kataGoModelSettings.selectedProfileID)
+            }
+            return
+        }
+        guard kataGoModelSettings.cacheRootPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
+            kataGoModelStatus = .missingCacheRoot(profileID: profile.id)
+            return
+        }
+
+        let cache = GokanModelCache(rootURL: URL(filePath: kataGoModelSettings.cacheRootPath))
+        let result = await cache.verifyChecksum(for: profile)
+        kataGoModelStatus = status(for: result, profile: profile)
+        if case .checksumMismatch = kataGoModelStatus {
+            engineStatus = .error(kataGoModelStatus.message)
+        } else if case .verificationFailed = kataGoModelStatus {
+            engineStatus = .error(kataGoModelStatus.message)
+        }
+    }
+
     public func analyze() async {
         let version = positionVersion
         let analysisVersion = analysisRequestVersion
@@ -475,7 +578,7 @@ public final class GokanAppModel {
     }
 
     public func makeAnalysisEngine() throws -> any GoAnalysisEngine {
-        let selection = AnalysisEngineSelection(kind: engineKind, kataGoSettings: kataGoSettings)
+        let selection = currentAnalysisEngineSelection()
         switch engineStatus {
         case .kataGoIncomplete, .kataGoUnsupported:
             throw engineStatus
@@ -587,16 +690,29 @@ public final class GokanAppModel {
     }
 
     private func refreshEngineStatus() {
-        engineStatus = Self.status(
-            for: AnalysisEngineSelection(kind: engineKind, kataGoSettings: kataGoSettings),
-            supportsKataGoSubprocess: supportsKataGoSubprocess
-        )
+        let resolution = resolveKataGoConfiguration()
+        kataGoModelStatus = resolution.modelStatus
+
+        switch engineKind {
+        case .mock:
+            engineStatus = .mock
+        case .kataGo:
+            guard supportsKataGoSubprocess else {
+                engineStatus = .kataGoUnsupported
+                return
+            }
+
+            engineStatus = resolution.missingFields.isEmpty
+                ? .kataGoConfigured
+                : .kataGoIncomplete(missingFields: resolution.missingFields)
+        }
     }
 
     private func restoreEngineSelection(_ selection: AnalysisEngineSelection) {
         isRestoringEngineSelection = true
         engineKind = selection.kind
         kataGoSettings = selection.kataGoSettings
+        kataGoModelSettings = selection.kataGoModelSettings
         isRestoringEngineSelection = false
     }
 
@@ -609,6 +725,8 @@ public final class GokanAppModel {
         settingsDefaults.set(kataGoSettings.executablePath, forKey: EngineSettingsDefaultsKey.executablePath)
         settingsDefaults.set(kataGoSettings.modelPath, forKey: EngineSettingsDefaultsKey.modelPath)
         settingsDefaults.set(kataGoSettings.configPath, forKey: EngineSettingsDefaultsKey.configPath)
+        settingsDefaults.set(kataGoModelSettings.selectedProfileID, forKey: EngineSettingsDefaultsKey.modelProfileID)
+        settingsDefaults.set(kataGoModelSettings.cacheRootPath, forKey: EngineSettingsDefaultsKey.modelCacheRootPath)
     }
 
     private nonisolated static func loadPersistedEngineSelection(from defaults: UserDefaults) -> AnalysisEngineSelection {
@@ -619,24 +737,153 @@ public final class GokanAppModel {
             modelPath: defaults.string(forKey: EngineSettingsDefaultsKey.modelPath) ?? "",
             configPath: defaults.string(forKey: EngineSettingsDefaultsKey.configPath) ?? ""
         )
-        return AnalysisEngineSelection(kind: kind, kataGoSettings: settings)
+        let modelSettings = KataGoModelSettings(
+            selectedProfileID: defaults.string(forKey: EngineSettingsDefaultsKey.modelProfileID) ?? "",
+            cacheRootPath: defaults.string(forKey: EngineSettingsDefaultsKey.modelCacheRootPath) ?? ""
+        )
+        return AnalysisEngineSelection(kind: kind, kataGoSettings: settings, kataGoModelSettings: modelSettings)
     }
 
-    private nonisolated static func status(
-        for selection: AnalysisEngineSelection,
-        supportsKataGoSubprocess: Bool
-    ) -> EngineStatus {
-        switch selection.kind {
-        case .mock:
-            return .mock
-        case .kataGo:
-            guard supportsKataGoSubprocess else {
-                return .kataGoUnsupported
-            }
+    private func currentAnalysisEngineSelection() -> AnalysisEngineSelection {
+        AnalysisEngineSelection(
+            kind: engineKind,
+            kataGoSettings: kataGoSettings,
+            kataGoModelSettings: kataGoModelSettings,
+            resolvedKataGoConfiguration: resolveKataGoConfiguration().configuration
+        )
+    }
 
-            let missingFields = selection.kataGoSettings.missingFields
-            return missingFields.isEmpty ? .kataGoConfigured : .kataGoIncomplete(missingFields: missingFields)
+    private func resolveKataGoConfiguration() -> KataGoConfigurationResolution {
+        var missingFields: [String] = []
+        var modelStatus: KataGoModelStatus = .notSelected
+
+        let executablePath = trimmed(kataGoSettings.executablePath)
+        if executablePath.isEmpty {
+            missingFields.append("executable path")
         }
+
+        let modelResolution = resolveModelURL()
+        modelStatus = modelResolution.status
+        if let missingField = modelResolution.missingField {
+            missingFields.appendMissingField(missingField)
+        }
+
+        let configResolution = modelResolution.missingField == "cached model file"
+            ? PathResolution(url: nil, missingField: nil, status: modelStatus)
+            : resolveConfigURL()
+        if let missingField = configResolution.missingField {
+            missingFields.appendMissingField(missingField)
+        }
+
+        guard missingFields.isEmpty,
+              let modelURL = modelResolution.url,
+              let configURL = configResolution.url else {
+            return KataGoConfigurationResolution(configuration: nil, missingFields: missingFields, modelStatus: modelStatus)
+        }
+
+        return KataGoConfigurationResolution(
+            configuration: KataGoEngineConfiguration(
+                executableURL: URL(filePath: executablePath),
+                modelURL: modelURL,
+                configURL: configURL
+            ),
+            missingFields: [],
+            modelStatus: modelStatus
+        )
+    }
+
+    private func resolveModelURL() -> PathResolution {
+        let rawModelPath = trimmed(kataGoSettings.modelPath)
+        if rawModelPath.isEmpty == false {
+            return PathResolution(url: URL(filePath: rawModelPath), missingField: nil, status: .manualPath(path: rawModelPath))
+        }
+
+        guard let profile = selectedModelProfile() else {
+            return missingProfilePathResolution(missingFieldWhenUnselected: "model path")
+        }
+        guard trimmed(kataGoModelSettings.cacheRootPath).isEmpty == false else {
+            return PathResolution(url: nil, missingField: "model cache root", status: .missingCacheRoot(profileID: profile.id))
+        }
+
+        let cache = GokanModelCache(rootURL: URL(filePath: kataGoModelSettings.cacheRootPath))
+        switch cache.readiness(for: profile) {
+        case .ready(let modelURL, let configURL, _):
+            return PathResolution(
+                url: modelURL,
+                missingField: nil,
+                status: .profileReady(
+                    profileID: profile.id,
+                    displayName: profile.displayName,
+                    modelPath: modelURL.path,
+                    configPath: configURL?.path
+                )
+            )
+        case .missingModel(let modelURL):
+            return PathResolution(url: nil, missingField: "cached model file", status: .missingCachedModel(profileID: profile.id, path: modelURL.path))
+        case .missingConfig(let configURL):
+            return PathResolution(url: nil, missingField: "cached config file", status: .missingCachedConfig(profileID: profile.id, path: configURL.path))
+        }
+    }
+
+    private func resolveConfigURL() -> PathResolution {
+        let rawConfigPath = trimmed(kataGoSettings.configPath)
+        if rawConfigPath.isEmpty == false {
+            return PathResolution(url: URL(filePath: rawConfigPath), missingField: nil, status: kataGoModelStatus)
+        }
+
+        guard let profile = selectedModelProfile() else {
+            return missingProfilePathResolution(missingFieldWhenUnselected: "config path")
+        }
+        guard trimmed(kataGoModelSettings.cacheRootPath).isEmpty == false else {
+            return PathResolution(url: nil, missingField: "model cache root", status: .missingCacheRoot(profileID: profile.id))
+        }
+
+        let cache = GokanModelCache(rootURL: URL(filePath: kataGoModelSettings.cacheRootPath))
+        guard let configURL = cache.configURL(for: profile) else {
+            return PathResolution(url: nil, missingField: "config path", status: kataGoModelStatus)
+        }
+        guard FileManager.default.fileExists(atPath: configURL.path) else {
+            return PathResolution(url: nil, missingField: "cached config file", status: .missingCachedConfig(profileID: profile.id, path: configURL.path))
+        }
+
+        return PathResolution(url: configURL, missingField: nil, status: kataGoModelStatus)
+    }
+
+    private func missingProfilePathResolution(missingFieldWhenUnselected: String) -> PathResolution {
+        let profileID = trimmed(kataGoModelSettings.selectedProfileID)
+        if profileID.isEmpty {
+            return PathResolution(url: nil, missingField: missingFieldWhenUnselected, status: .notSelected)
+        }
+
+        return PathResolution(url: nil, missingField: "model profile", status: .profileUnavailable(profileID: profileID))
+    }
+
+    private func selectedModelProfile() -> GokanModelProfile? {
+        let profileID = trimmed(kataGoModelSettings.selectedProfileID)
+        guard profileID.isEmpty == false else {
+            return nil
+        }
+
+        return modelCatalog.profile(id: profileID)
+    }
+
+    private func status(for result: GokanModelVerificationResult, profile: GokanModelProfile) -> KataGoModelStatus {
+        switch result {
+        case .checksumUnavailable:
+            .checksumUnavailable(profileID: profile.id)
+        case .verified(_, let expectedSHA256, _):
+            .checksumVerified(profileID: profile.id, sha256: expectedSHA256)
+        case .mismatch(_, let expectedSHA256, let actualSHA256):
+            .checksumMismatch(profileID: profile.id, expected: expectedSHA256, actual: actualSHA256)
+        case .missing(let modelURL):
+            .missingCachedModel(profileID: profile.id, path: modelURL.path)
+        case .failed(_, let message):
+            .verificationFailed(profileID: profile.id, message: message)
+        }
+    }
+
+    private func trimmed(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     public nonisolated static func defaultEngineFactory(selection: AnalysisEngineSelection) throws -> any GoAnalysisEngine {
@@ -644,18 +891,22 @@ public final class GokanAppModel {
         case .mock:
             return MockAnalysisEngine()
         case .kataGo:
-            let missingFields = selection.kataGoSettings.missingFields
-            guard missingFields.isEmpty else {
-                throw EngineStatus.kataGoIncomplete(missingFields: missingFields)
+            guard let configuration = selection.resolvedKataGoConfiguration else {
+                let missingFields = selection.kataGoSettings.missingFields
+                guard missingFields.isEmpty else {
+                    throw EngineStatus.kataGoIncomplete(missingFields: missingFields)
+                }
+
+                return KataGoAnalysisEngine(
+                    configuration: KataGoEngineConfiguration(
+                        executableURL: URL(filePath: selection.kataGoSettings.executablePath),
+                        modelURL: URL(filePath: selection.kataGoSettings.modelPath),
+                        configURL: URL(filePath: selection.kataGoSettings.configPath)
+                    )
+                )
             }
 
-            return KataGoAnalysisEngine(
-                configuration: KataGoEngineConfiguration(
-                    executableURL: URL(filePath: selection.kataGoSettings.executablePath),
-                    modelURL: URL(filePath: selection.kataGoSettings.modelPath),
-                    configURL: URL(filePath: selection.kataGoSettings.configPath)
-                )
-            )
+            return KataGoAnalysisEngine(configuration: configuration)
         }
     }
 
@@ -668,6 +919,18 @@ public final class GokanAppModel {
     }
 }
 
+private struct KataGoConfigurationResolution {
+    var configuration: KataGoEngineConfiguration?
+    var missingFields: [String]
+    var modelStatus: KataGoModelStatus
+}
+
+private struct PathResolution {
+    var url: URL?
+    var missingField: String?
+    var status: KataGoModelStatus
+}
+
 extension EngineStatus: LocalizedError {
     public var errorDescription: String? {
         message
@@ -678,14 +941,22 @@ private extension KataGoPathSettings {
     var missingFields: [String] {
         var fields: [String] = []
         if executablePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            fields.append("executable path")
+            fields.appendMissingField("executable path")
         }
         if modelPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            fields.append("model path")
+            fields.appendMissingField("model path")
         }
         if configPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            fields.append("config path")
+            fields.appendMissingField("config path")
         }
         return fields
+    }
+}
+
+private extension Array where Element == String {
+    mutating func appendMissingField(_ field: String) {
+        if contains(field) == false {
+            append(field)
+        }
     }
 }

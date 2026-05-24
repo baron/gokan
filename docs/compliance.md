@@ -14,6 +14,9 @@ Practical requirements:
 - Keep KataGo copyright and license notices.
 - Keep vendored dependency notices from `cpp/external`.
 - Track model license text with downloaded/bundled networks.
+- Track model checksums and license notice metadata in catalog/profile files;
+  keep neural network binaries out of git unless a release policy explicitly
+  allows them.
 - Do not imply upstream endorsement of the fork or app.
 - Prefer keeping the KataGo fork permissively licensed if upstreaming patches is
   a goal.

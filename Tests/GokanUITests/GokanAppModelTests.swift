@@ -4,6 +4,7 @@ import Foundation
 import Testing
 import GokanCore
 import GokanEngine
+import GokanModels
 @testable import GokanUI
 
 @MainActor
@@ -820,8 +821,189 @@ func configuredKataGoSelectionIsPassedToEngineFactory() throws {
                 executablePath: "/usr/local/bin/katago",
                 modelPath: "/models/model.bin.gz",
                 configPath: "/configs/analysis.cfg"
+            ),
+            resolvedKataGoConfiguration: KataGoEngineConfiguration(
+                executableURL: URL(filePath: "/usr/local/bin/katago"),
+                modelURL: URL(filePath: "/models/model.bin.gz"),
+                configURL: URL(filePath: "/configs/analysis.cfg")
             )
         )
+    )
+}
+
+@MainActor
+@Test
+func kataGoModelSettingsPersistAcrossModelInstances() throws {
+    let defaults = isolatedDefaults()
+    let catalog = try modelCatalog()
+    let firstModel = GokanAppModel(
+        engine: SilentAnalysisEngine(),
+        settingsDefaults: defaults.userDefaults,
+        supportsKataGoSubprocess: true,
+        modelCatalog: catalog
+    )
+
+    firstModel.engineKind = .kataGo
+    firstModel.kataGoModelSettings = KataGoModelSettings(
+        selectedProfileID: "tiny-dev",
+        cacheRootPath: "/tmp/gokan-models"
+    )
+    let restoredModel = GokanAppModel(
+        engine: SilentAnalysisEngine(),
+        settingsDefaults: defaults.userDefaults,
+        supportsKataGoSubprocess: true,
+        modelCatalog: catalog
+    )
+
+    #expect(restoredModel.kataGoModelSettings.selectedProfileID == "tiny-dev")
+    #expect(restoredModel.kataGoModelSettings.cacheRootPath == "/tmp/gokan-models")
+}
+
+@MainActor
+@Test
+func cachedModelProfileDerivesKataGoConfiguration() throws {
+    let temp = try TemporaryDirectory()
+    let catalog = try modelCatalog()
+    let cache = GokanModelCache(rootURL: temp.url)
+    let profile = try #require(catalog.profile(id: "tiny-dev"))
+    try writeData("hello", to: cache.modelURL(for: profile))
+    try writeData("config", to: try #require(cache.configURL(for: profile)))
+    let probe = EngineFactoryProbe()
+    let model = GokanAppModel(
+        engineFactory: probe.makeEngine(selection:),
+        supportsKataGoSubprocess: true,
+        modelCatalog: catalog
+    )
+
+    model.engineKind = .kataGo
+    model.kataGoSettings = KataGoPathSettings(executablePath: "/usr/local/bin/katago")
+    model.kataGoModelSettings = KataGoModelSettings(selectedProfileID: "tiny-dev", cacheRootPath: temp.url.path)
+    _ = try model.makeAnalysisEngine()
+
+    #expect(model.engineStatus == .kataGoConfigured)
+    #expect(
+        model.kataGoModelStatus
+            == .profileReady(
+                profileID: "tiny-dev",
+                displayName: "Tiny Dev Model",
+                modelPath: cache.modelURL(for: profile).path,
+                configPath: cache.configURL(for: profile)?.path
+            )
+    )
+    #expect(
+        probe.lastSelection?.resolvedKataGoConfiguration
+            == KataGoEngineConfiguration(
+                executableURL: URL(filePath: "/usr/local/bin/katago"),
+                modelURL: cache.modelURL(for: profile),
+                configURL: try #require(cache.configURL(for: profile))
+            )
+    )
+}
+
+@MainActor
+@Test
+func missingCachedModelReportsIncompleteStatus() throws {
+    let temp = try TemporaryDirectory()
+    let catalog = try modelCatalog()
+    let profile = try #require(catalog.profile(id: "tiny-dev"))
+    let cache = GokanModelCache(rootURL: temp.url)
+    let model = GokanAppModel(
+        engine: SilentAnalysisEngine(),
+        supportsKataGoSubprocess: true,
+        modelCatalog: catalog
+    )
+
+    model.engineKind = .kataGo
+    model.kataGoSettings = KataGoPathSettings(executablePath: "/usr/local/bin/katago")
+    model.kataGoModelSettings = KataGoModelSettings(selectedProfileID: "tiny-dev", cacheRootPath: temp.url.path)
+
+    #expect(model.engineStatus == .kataGoIncomplete(missingFields: ["cached model file"]))
+    #expect(model.kataGoModelStatus == .missingCachedModel(profileID: "tiny-dev", path: cache.modelURL(for: profile).path))
+}
+
+@MainActor
+@Test
+func missingCachedConfigReportsIncompleteStatus() throws {
+    let temp = try TemporaryDirectory()
+    let catalog = try modelCatalog()
+    let profile = try #require(catalog.profile(id: "tiny-dev"))
+    let cache = GokanModelCache(rootURL: temp.url)
+    try writeData("hello", to: cache.modelURL(for: profile))
+    let model = GokanAppModel(
+        engine: SilentAnalysisEngine(),
+        supportsKataGoSubprocess: true,
+        modelCatalog: catalog
+    )
+
+    model.engineKind = .kataGo
+    model.kataGoSettings = KataGoPathSettings(executablePath: "/usr/local/bin/katago")
+    model.kataGoModelSettings = KataGoModelSettings(selectedProfileID: "tiny-dev", cacheRootPath: temp.url.path)
+
+    #expect(model.engineStatus == .kataGoIncomplete(missingFields: ["cached config file"]))
+    #expect(model.kataGoModelStatus == .missingCachedConfig(profileID: "tiny-dev", path: try #require(cache.configURL(for: profile)).path))
+}
+
+@MainActor
+@Test
+func rawModelPathTakesPrecedenceOverSelectedProfile() {
+    let model = GokanAppModel(
+        engine: SilentAnalysisEngine(),
+        supportsKataGoSubprocess: true,
+        modelCatalog: (try? modelCatalog()) ?? .empty
+    )
+
+    model.engineKind = .kataGo
+    model.kataGoSettings = KataGoPathSettings(
+        executablePath: "/usr/local/bin/katago",
+        modelPath: "/manual/model.bin.gz",
+        configPath: "/manual/analysis.cfg"
+    )
+    model.kataGoModelSettings = KataGoModelSettings(selectedProfileID: "tiny-dev", cacheRootPath: "/missing/cache")
+
+    #expect(model.engineStatus == .kataGoConfigured)
+    #expect(model.kataGoModelStatus == .manualPath(path: "/manual/model.bin.gz"))
+}
+
+@MainActor
+@Test
+func unknownModelProfileReportsUnavailableStatus() {
+    let model = GokanAppModel(
+        engine: SilentAnalysisEngine(),
+        supportsKataGoSubprocess: true,
+        modelCatalog: (try? modelCatalog()) ?? .empty
+    )
+
+    model.engineKind = .kataGo
+    model.kataGoSettings = KataGoPathSettings(executablePath: "/usr/local/bin/katago")
+    model.kataGoModelSettings = KataGoModelSettings(selectedProfileID: "future-profile", cacheRootPath: "/tmp/gokan-models")
+
+    #expect(model.engineStatus == .kataGoIncomplete(missingFields: ["model profile"]))
+    #expect(model.kataGoModelStatus == .profileUnavailable(profileID: "future-profile"))
+}
+
+@MainActor
+@Test
+func verifySelectedKataGoModelChecksumUpdatesStatus() async throws {
+    let temp = try TemporaryDirectory()
+    let catalog = try modelCatalog()
+    let cache = GokanModelCache(rootURL: temp.url)
+    let profile = try #require(catalog.profile(id: "tiny-dev"))
+    try writeData("hello", to: cache.modelURL(for: profile))
+    try writeData("config", to: try #require(cache.configURL(for: profile)))
+    let model = GokanAppModel(
+        engine: SilentAnalysisEngine(),
+        supportsKataGoSubprocess: true,
+        modelCatalog: catalog
+    )
+
+    model.engineKind = .kataGo
+    model.kataGoSettings = KataGoPathSettings(executablePath: "/usr/local/bin/katago")
+    model.kataGoModelSettings = KataGoModelSettings(selectedProfileID: "tiny-dev", cacheRootPath: temp.url.path)
+    await model.verifySelectedKataGoModelChecksum()
+
+    #expect(
+        model.kataGoModelStatus
+            == .checksumVerified(profileID: "tiny-dev", sha256: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824")
     )
 }
 
@@ -1079,6 +1261,40 @@ private final class IsolatedDefaults {
 
     deinit {
         userDefaults.removePersistentDomain(forName: suiteName)
+    }
+}
+
+private func modelCatalog() throws -> GokanModelCatalog {
+    try GokanModelCatalog(
+        profiles: [
+            GokanModelProfile(
+                id: "tiny-dev",
+                displayName: "Tiny Dev Model",
+                modelFileName: "tiny.bin.gz",
+                defaultConfigFileName: "analysis.cfg",
+                checksum: try GokanModelChecksum(sha256: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"),
+                license: GokanModelLicense(name: "Fixture")
+            ),
+        ]
+    )
+}
+
+private func writeData(_ text: String, to url: URL) throws {
+    try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+    try Data(text.utf8).write(to: url)
+}
+
+private final class TemporaryDirectory {
+    let url: URL
+
+    init() throws {
+        url = FileManager.default.temporaryDirectory
+            .appending(path: "gokan-ui-model-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    }
+
+    deinit {
+        try? FileManager.default.removeItem(at: url)
     }
 }
 

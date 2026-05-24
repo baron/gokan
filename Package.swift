@@ -12,6 +12,7 @@ let package = Package(
     products: [
         .library(name: "GokanCore", targets: ["GokanCore"]),
         .library(name: "GokanEngine", targets: ["GokanEngine"]),
+        .library(name: "GokanModels", targets: ["GokanModels"]),
         .library(name: "GokanUI", targets: ["GokanUI"]),
         .executable(name: "GokanMacApp", targets: ["GokanMacApp"]),
     ],
@@ -21,9 +22,10 @@ let package = Package(
             name: "GokanEngine",
             dependencies: ["GokanCore"]
         ),
+        .target(name: "GokanModels"),
         .target(
             name: "GokanUI",
-            dependencies: ["GokanCore", "GokanEngine"]
+            dependencies: ["GokanCore", "GokanEngine", "GokanModels"]
         ),
         .executableTarget(
             name: "GokanMacApp",
@@ -36,6 +38,10 @@ let package = Package(
         .testTarget(
             name: "GokanEngineTests",
             dependencies: ["GokanEngine"]
+        ),
+        .testTarget(
+            name: "GokanModelsTests",
+            dependencies: ["GokanModels"]
         ),
         .testTarget(
             name: "GokanUITests",

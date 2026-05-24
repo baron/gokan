@@ -32,6 +32,8 @@ The current first implementation slice is a root Swift package with:
 - `GokanCore`: board state, rules, moves, and game record primitives;
 - `GokanEngine`: analysis request/result types plus mock and placeholder
   KataGo engine boundaries;
+- `GokanModels`: lightweight KataGo model profile/catalog metadata, local cache
+  path conventions, readiness checks, and explicit checksum verification;
 - `GokanUI`: shared SwiftUI board and analysis shell;
 - `GokanMacApp`: runnable macOS development executable.
 
@@ -75,3 +77,20 @@ Do not fork for guesses. Fork for measured bottlenecks:
 - collect benchmark output and Instruments traces;
 - improve one bottleneck at a time;
 - keep upstream-compatible patches small enough to submit back when possible.
+
+## Model Metadata
+
+The first `GokanModels` implementation is metadata-only. It defines local model
+profiles, license/checksum metadata, and this cache convention:
+
+```text
+<cacheRoot>/
+  models/
+    <profile.modelFileName>
+  configs/
+    <profile.defaultConfigFileName>
+```
+
+It does not download, bundle, or check in neural network files. `GokanUI`
+resolves selected profiles to ordinary `KataGoEngineConfiguration` URLs so the
+engine process boundary remains independent of catalog details.

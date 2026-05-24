@@ -15,8 +15,8 @@ headers, and release materials.
 ## Direction
 
 - Native SwiftUI app for iOS, iPadOS, and macOS.
-- Shared Swift package for board state, SGF parsing, engine orchestration, and
-  app settings.
+- Shared Swift package for board state, SGF parsing, engine orchestration, model
+  catalog metadata, and app settings.
 - KataGo integrated as a separately tracked engine fork, preserving upstream
   license notices.
 - Apple Silicon performance work focused first on the existing KataGo Metal
@@ -55,8 +55,8 @@ scripts/build-katago-metal.sh
 ```
 
 KataGo's Metal backend requires CMake, Ninja, Xcode, and Swift/C++ interop.
-The Swift package builds the shared core, placeholder engine boundary, SwiftUI
-shell, and macOS executable target.
+The Swift package builds the shared core, model metadata/cache helpers, KataGo
+analysis boundary, SwiftUI shell, and macOS executable target.
 
 Run the macOS development app:
 
@@ -73,6 +73,10 @@ KataGo vendored dependencies, and KataGo neural network files keep their own
 upstream licenses and notices. See [LICENSE](LICENSE),
 [LICENSE_POLICY.md](LICENSE_POLICY.md), [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md),
 and [docs/compliance.md](docs/compliance.md).
+
+Model catalog entries track local file names, checksums, and license notice
+metadata only. Neural network binaries should live outside git or under ignored
+cache directories.
 
 App Store distribution needs a separate legal decision because GPL-family
 licenses and Apple's distribution terms can conflict.
