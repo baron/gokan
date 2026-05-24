@@ -14,17 +14,62 @@ public struct PlayedMove: Hashable, Sendable, Identifiable {
     }
 }
 
+public struct GameTreeNode: Hashable, Sendable, Identifiable {
+    public let id: UUID
+    public var playedMove: PlayedMove
+    public var children: [GameTreeNode]
+
+    public init(id: UUID = UUID(), playedMove: PlayedMove, children: [GameTreeNode] = []) {
+        self.id = id
+        self.playedMove = playedMove
+        self.children = children
+    }
+}
+
+public struct GameVariationChoice: Hashable, Sendable, Identifiable {
+    public let index: Int
+    public let move: PlayedMove
+    public let isSelected: Bool
+
+    public var id: Int {
+        index
+    }
+
+    public init(index: Int, move: PlayedMove, isSelected: Bool) {
+        self.index = index
+        self.move = move
+        self.isSelected = isSelected
+    }
+}
+
 public struct GameRecord: Hashable, Sendable {
     public private(set) var board: GoBoard
-    public private(set) var moves: [PlayedMove]
     public private(set) var nextPlayer: StoneColor
     public private(set) var currentMoveIndex: Int
+    public private(set) var rootChildren: [GameTreeNode]
+
+    private var selectedLinePath: [Int]
 
     public init(boardSize: BoardSize = .standard) {
         self.board = GoBoard(size: boardSize)
-        self.moves = []
         self.nextPlayer = .black
         self.currentMoveIndex = 0
+        self.rootChildren = []
+        self.selectedLinePath = []
+    }
+
+    public init(boardSize: BoardSize = .standard, rootChildren: [GameTreeNode]) throws {
+        self.board = GoBoard(size: boardSize)
+        self.nextPlayer = .black
+        self.currentMoveIndex = 0
+        self.rootChildren = rootChildren
+        self.selectedLinePath = []
+        self.selectedLinePath = selectedLineFollowingFirstChildren(from: [])
+        try goToEnd()
+    }
+
+    public var moves: [PlayedMove] {
+        nodes(along: selectedLinePath).map(\.playedMove)
     }
 
     public var appliedMoves: [PlayedMove] {
@@ -39,34 +84,26 @@ public struct GameRecord: Hashable, Sendable {
         currentMoveIndex < moves.count
     }
 
-    public mutating func play(_ move: Move) throws {
-        truncateFutureMoves()
-
-        switch move {
-        case .play(let point):
-            board = try board.placing(nextPlayer, at: point)
-        case .pass:
-            break
+    public var variationChoices: [GameVariationChoice] {
+        let path = Array(selectedLinePath.prefix(currentMoveIndex))
+        let selectedIndex = currentMoveIndex < selectedLinePath.count ? selectedLinePath[currentMoveIndex] : nil
+        return children(at: path).enumerated().map { index, node in
+            GameVariationChoice(index: index, move: node.playedMove, isSelected: index == selectedIndex)
         }
+    }
 
-        moves.append(PlayedMove(color: nextPlayer, move: move))
-        currentMoveIndex = moves.count
-        nextPlayer = nextPlayer.opponent
+    public mutating func play(_ move: Move) throws {
+        try play(PlayedMove(color: nextPlayer, move: move))
     }
 
     public mutating func play(_ playedMove: PlayedMove) throws {
-        truncateFutureMoves()
+        _ = try board(afterApplying: playedMove, to: board)
 
-        switch playedMove.move {
-        case .play(let point):
-            board = try board.placing(playedMove.color, at: point)
-        case .pass:
-            break
-        }
-
-        moves.append(playedMove)
-        currentMoveIndex = moves.count
-        nextPlayer = playedMove.color.opponent
+        let parentPath = Array(selectedLinePath.prefix(currentMoveIndex))
+        let childIndex = appendOrFindChild(GameTreeNode(playedMove: playedMove), to: parentPath)
+        selectedLinePath = selectedLineFollowingFirstChildren(from: parentPath + [childIndex])
+        currentMoveIndex = parentPath.count + 1
+        try refreshReviewedPosition()
     }
 
     public mutating func stepBackward() throws {
@@ -86,32 +123,109 @@ public struct GameRecord: Hashable, Sendable {
     }
 
     public mutating func goToMove(_ moveIndex: Int) throws {
-        let clampedIndex = min(max(moveIndex, 0), moves.count)
-        board = GoBoard(size: board.size)
-
-        for playedMove in moves.prefix(clampedIndex) {
-            switch playedMove.move {
-            case .play(let point):
-                board = try board.placing(playedMove.color, at: point)
-            case .pass:
-                break
-            }
-        }
-
-        currentMoveIndex = clampedIndex
-        nextPlayer = nextPlayerAfterMove(at: clampedIndex)
+        currentMoveIndex = min(max(moveIndex, 0), moves.count)
+        try refreshReviewedPosition()
     }
 
-    private mutating func truncateFutureMoves() {
-        if currentMoveIndex < moves.count {
-            moves.removeSubrange(currentMoveIndex..<moves.count)
+    public mutating func selectVariation(at index: Int) throws {
+        let parentPath = Array(selectedLinePath.prefix(currentMoveIndex))
+        let availableChildren = children(at: parentPath)
+        guard availableChildren.indices.contains(index) else {
+            return
         }
+
+        selectedLinePath = selectedLineFollowingFirstChildren(from: parentPath + [index])
+        currentMoveIndex = parentPath.count + 1
+        try refreshReviewedPosition()
+    }
+
+    private mutating func refreshReviewedPosition() throws {
+        board = GoBoard(size: board.size)
+
+        for playedMove in appliedMoves {
+            board = try board(afterApplying: playedMove, to: board)
+        }
+
+        nextPlayer = nextPlayerAfterMove(at: currentMoveIndex)
     }
 
     private func nextPlayerAfterMove(at moveIndex: Int) -> StoneColor {
-        if moveIndex < moves.count {
-            return moves[moveIndex].color
+        let selectedMoves = moves
+        if moveIndex < selectedMoves.count {
+            return selectedMoves[moveIndex].color
         }
-        return moves.prefix(moveIndex).last?.color.opponent ?? .black
+        return selectedMoves.prefix(moveIndex).last?.color.opponent ?? .black
+    }
+
+    private func board(afterApplying playedMove: PlayedMove, to board: GoBoard) throws -> GoBoard {
+        switch playedMove.move {
+        case .play(let point):
+            return try board.placing(playedMove.color, at: point)
+        case .pass:
+            return board
+        }
+    }
+
+    private func selectedLineFollowingFirstChildren(from path: [Int]) -> [Int] {
+        var path = path
+        while let node = node(at: path), node.children.isEmpty == false {
+            path.append(0)
+        }
+        if path.isEmpty, rootChildren.isEmpty == false {
+            return selectedLineFollowingFirstChildren(from: [0])
+        }
+        return path
+    }
+
+    private func nodes(along path: [Int]) -> [GameTreeNode] {
+        var result: [GameTreeNode] = []
+        var children = rootChildren
+        for index in path {
+            guard children.indices.contains(index) else {
+                break
+            }
+            let node = children[index]
+            result.append(node)
+            children = node.children
+        }
+        return result
+    }
+
+    private func node(at path: [Int]) -> GameTreeNode? {
+        nodes(along: path).last
+    }
+
+    private func children(at path: [Int]) -> [GameTreeNode] {
+        guard path.isEmpty == false else {
+            return rootChildren
+        }
+        return node(at: path)?.children ?? []
+    }
+
+    private mutating func appendOrFindChild(_ child: GameTreeNode, to path: [Int]) -> Int {
+        if let existingIndex = children(at: path).firstIndex(where: { $0.playedMove.move == child.playedMove.move && $0.playedMove.color == child.playedMove.color }) {
+            return existingIndex
+        }
+
+        if path.isEmpty {
+            rootChildren.append(child)
+            return rootChildren.count - 1
+        }
+
+        return Self.appendChild(&rootChildren, child, to: path)
+    }
+
+    private static func appendChild(_ nodes: inout [GameTreeNode], _ child: GameTreeNode, to path: [Int]) -> Int {
+        guard let index = path.first, nodes.indices.contains(index) else {
+            nodes.append(child)
+            return nodes.count - 1
+        }
+
+        if path.count == 1 {
+            nodes[index].children.append(child)
+            return nodes[index].children.count - 1
+        }
+
+        return appendChild(&nodes[index].children, child, to: Array(path.dropFirst()))
     }
 }

@@ -239,7 +239,7 @@ func analysisRequestUsesReviewedMovePrefix() async {
 
 @MainActor
 @Test
-func playingFromEarlierReviewMoveTruncatesFutureSGF() throws {
+func playingFromEarlierReviewMoveCreatesSGFVariation() throws {
     let model = GokanAppModel(engine: SilentAnalysisEngine())
     model.loadSGFText("(;GM[1]FF[4]SZ[9];B[ee];W[ef])")
     model.previousMove()
@@ -251,7 +251,36 @@ func playingFromEarlierReviewMoveTruncatesFutureSGF() throws {
     #expect(model.game.currentMoveIndex == 2)
     #expect(model.game.board[BoardPoint(x: 4, y: 5)] == nil)
     #expect(model.game.board[BoardPoint(x: 5, y: 5)] == .white)
-    #expect(sgf == "(;GM[1]FF[4]CA[UTF-8]AP[Gokan]SZ[9];B[ee];W[ff])\n")
+    #expect(model.game.rootChildren[0].children.count == 2)
+    #expect(sgf == "(;GM[1]FF[4]CA[UTF-8]AP[Gokan]SZ[9];B[ee](;W[ef])(;W[ff]))\n")
+}
+
+@MainActor
+@Test
+func loadingSGFWithVariationsExposesBranchChoices() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    model.loadSGFText("(;GM[1]FF[4]SZ[9];B[ee](;W[ef])(;W[ff]))")
+
+    model.previousMove()
+
+    #expect(model.game.variationChoices.count == 2)
+    #expect(model.game.variationChoices[0].isSelected)
+    #expect(model.game.variationChoices[1].move.move == .play(BoardPoint(x: 5, y: 5)))
+}
+
+@MainActor
+@Test
+func selectingAlternateVariationUpdatesBoard() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    model.loadSGFText("(;GM[1]FF[4]SZ[9];B[ee](;W[ef])(;W[ff]))")
+    model.previousMove()
+
+    model.selectVariation(at: 1)
+
+    #expect(model.game.currentMoveIndex == 2)
+    #expect(model.game.board[BoardPoint(x: 4, y: 5)] == nil)
+    #expect(model.game.board[BoardPoint(x: 5, y: 5)] == .white)
+    #expect(model.selectedPoint == BoardPoint(x: 5, y: 5))
 }
 
 @MainActor

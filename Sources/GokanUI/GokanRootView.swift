@@ -98,6 +98,18 @@ private struct SidebarView: View {
                 }
             }
 
+            if model.game.variationChoices.count > 1 {
+                Section("Variations") {
+                    ForEach(model.game.variationChoices) { choice in
+                        Button {
+                            model.selectVariation(at: choice.index)
+                        } label: {
+                            Label(variationTitle(for: choice), systemImage: choice.isSelected ? "checkmark.circle.fill" : "circle")
+                        }
+                    }
+                }
+            }
+
             Section("Engine") {
                 Picker("Engine", selection: $model.engineKind) {
                     ForEach(AnalysisEngineKind.allCases) { kind in
@@ -211,6 +223,20 @@ private struct SidebarView: View {
     private func exportSGF(result: Result<URL, Error>) {
         if case .failure(let error) = result {
             model.documentError = error.localizedDescription
+        }
+    }
+
+    private func variationTitle(for choice: GameVariationChoice) -> String {
+        "\(choice.index + 1). \(moveTitle(for: choice.move))"
+    }
+
+    private func moveTitle(for playedMove: PlayedMove) -> String {
+        let color = playedMove.color.rawValue.capitalized
+        switch playedMove.move {
+        case .pass:
+            return "\(color) pass"
+        case .play(let point):
+            return "\(color) \(point.x + 1), \(point.y + 1)"
         }
     }
 

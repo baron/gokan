@@ -59,7 +59,7 @@ func goToEndRestoresFinalBoard() throws {
 }
 
 @Test
-func playingFromMiddleTruncatesFutureMoves() throws {
+func playingFromMiddleCreatesSiblingVariation() throws {
     var game = GameRecord(boardSize: BoardSize(width: 9, height: 9))
     try game.play(.play(BoardPoint(x: 4, y: 4)))
     try game.play(.play(BoardPoint(x: 4, y: 5)))
@@ -71,6 +71,31 @@ func playingFromMiddleTruncatesFutureMoves() throws {
     #expect(game.currentMoveIndex == 2)
     #expect(game.board[BoardPoint(x: 4, y: 5)] == nil)
     #expect(game.board[BoardPoint(x: 5, y: 5)] == .white)
+    #expect(game.rootChildren[0].children.count == 2)
+    #expect(game.variationChoices.count == 0)
+}
+
+@Test
+func selectingVariationUpdatesBoardAndLine() throws {
+    var game = try SGFDocument.parse("(;GM[1]FF[4]SZ[9];B[ee](;W[ef])(;W[ff]))").gameRecord()
+    try game.stepBackward()
+
+    try game.selectVariation(at: 1)
+
+    #expect(game.currentMoveIndex == 2)
+    #expect(game.moves[1].move == .play(BoardPoint(x: 5, y: 5)))
+    #expect(game.board[BoardPoint(x: 4, y: 5)] == nil)
+    #expect(game.board[BoardPoint(x: 5, y: 5)] == .white)
+}
+
+@Test
+func variationChoicesDescribeContinuationsAtCurrentNode() throws {
+    var game = try SGFDocument.parse("(;GM[1]FF[4]SZ[9];B[ee](;W[ef])(;W[ff]))").gameRecord()
+    try game.stepBackward()
+
+    #expect(game.variationChoices.count == 2)
+    #expect(game.variationChoices[0].isSelected)
+    #expect(game.variationChoices[1].move.move == .play(BoardPoint(x: 5, y: 5)))
 }
 
 @Test

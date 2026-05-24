@@ -185,6 +185,15 @@ public final class GokanAppModel {
         }
     }
 
+    public func selectVariation(at index: Int) {
+        do {
+            try game.selectVariation(at: index)
+            positionDidChange(selectedPoint: selectedMovePoint, clearDocumentText: false)
+        } catch {
+            analysisError = String(describing: error)
+        }
+    }
+
     public func newGame(boardSize: BoardSize = .standard) {
         game = GameRecord(boardSize: boardSize)
         sgfText = ""
