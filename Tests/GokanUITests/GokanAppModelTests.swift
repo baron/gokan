@@ -223,6 +223,27 @@ func loadSGFFileImportsGameFromURL() throws {
 
 @MainActor
 @Test
+func sampleModelCatalogImportExposesProfileAndMissingCacheStatus() throws {
+    let model = GokanAppModel(
+        engine: SilentAnalysisEngine(),
+        supportsKataGoSubprocess: true,
+        modelCatalog: .empty
+    )
+    model.engineKind = .kataGo
+    model.kataGoModelSettings = KataGoModelSettings(selectedProfileID: "sample-9x9-metadata")
+
+    model.loadModelCatalogData(try sampleModelCatalogData())
+
+    let selectedProfile = try #require(model.selectedKataGoModelProfile)
+    #expect(model.modelCatalog.profiles.count == 2)
+    #expect(model.modelCatalogError == nil)
+    #expect(selectedProfile.displayName == "Sample 9x9 Metadata Profile")
+    #expect(model.kataGoModelStatus == .missingCacheRoot(profileID: "sample-9x9-metadata"))
+    #expect(model.engineStatus == .kataGoIncomplete(missingFields: ["executable path", "model cache root"]))
+}
+
+@MainActor
+@Test
 func exportSGFDataSerializesCurrentGameAsUTF8() throws {
     let model = GokanAppModel(engine: SilentAnalysisEngine())
     model.newGame(boardSize: BoardSize(width: 9, height: 9))
@@ -1671,6 +1692,12 @@ private func snapshot(with points: [BoardPoint]) -> AnalysisSnapshot {
         scoreLead: 1.5,
         completedVisits: 100
     )
+}
+
+private func sampleModelCatalogData() throws -> Data {
+    let testsDirectory = URL(filePath: #filePath).deletingLastPathComponent()
+    let packageRoot = testsDirectory.deletingLastPathComponent().deletingLastPathComponent()
+    return try Data(contentsOf: packageRoot.appending(path: "app/Shared/Resources/SampleModelCatalog.json"))
 }
 
 private enum FactoryError: LocalizedError {

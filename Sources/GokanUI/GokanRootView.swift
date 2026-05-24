@@ -9,20 +9,33 @@ import GokanModels
 
 public struct GokanRootView: View {
     private let initialSGFText: String?
+    private let initialModelCatalogData: Data?
     @State private var model: GokanAppModel
     @State private var didLoadInitialSGFText = false
+    @State private var didLoadInitialModelCatalogData = false
 
     @MainActor
     public init(
         initialSGFText: String? = nil,
         forceMockEngine: Bool = false,
-        modelCatalog: GokanModelCatalog = .empty
+        modelCatalog: GokanModelCatalog = .empty,
+        initialModelCatalogData: Data? = nil,
+        initialEngineKind: AnalysisEngineKind? = nil,
+        initialKataGoModelSettings: KataGoModelSettings? = nil
     ) {
         self.initialSGFText = initialSGFText
+        self.initialModelCatalogData = initialModelCatalogData
+        let appModel = forceMockEngine
+            ? GokanAppModel(engine: MockAnalysisEngine(), modelCatalog: modelCatalog)
+            : GokanAppModel(modelCatalog: modelCatalog)
+        if let initialEngineKind {
+            appModel.engineKind = initialEngineKind
+        }
+        if let initialKataGoModelSettings {
+            appModel.kataGoModelSettings = initialKataGoModelSettings
+        }
         _model = State(
-            initialValue: forceMockEngine
-                ? GokanAppModel(engine: MockAnalysisEngine(), modelCatalog: modelCatalog)
-                : GokanAppModel(modelCatalog: modelCatalog)
+            initialValue: appModel
         )
     }
 
@@ -39,8 +52,20 @@ public struct GokanRootView: View {
             model.loadSGFFile(at: url)
         }
         .onAppear {
+            loadInitialModelCatalogDataIfNeeded()
             loadInitialSGFTextIfNeeded()
         }
+    }
+
+    private func loadInitialModelCatalogDataIfNeeded() {
+        guard didLoadInitialModelCatalogData == false,
+              let initialModelCatalogData,
+              initialModelCatalogData.isEmpty == false else {
+            return
+        }
+
+        didLoadInitialModelCatalogData = true
+        model.loadModelCatalogData(initialModelCatalogData)
     }
 
     private func loadInitialSGFTextIfNeeded() {
@@ -552,6 +577,7 @@ private struct SidebarView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(profile.displayName)
                 .font(.headline)
+                .accessibilityIdentifier("gokan.model-profile-name")
             if let description = profile.description, description.isEmpty == false {
                 Text(description)
                     .foregroundStyle(.secondary)

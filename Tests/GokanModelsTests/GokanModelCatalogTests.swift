@@ -56,6 +56,34 @@ func catalogDecodesValidMetadataAndRoundTrips() throws {
 }
 
 @Test
+func sampleModelCatalogResourceDecodesAsMetadataOnlyProfiles() throws {
+    let catalog = try GokanModelCatalog.decode(from: sampleModelCatalogData())
+
+    #expect(catalog.schemaVersion == 1)
+    #expect(catalog.profiles.map(\.id) == [
+        "sample-9x9-metadata",
+        "sample-19x19-metadata",
+    ])
+
+    let smallProfile = try #require(catalog.profile(id: "sample-9x9-metadata"))
+    #expect(smallProfile.displayName == "Sample 9x9 Metadata Profile")
+    #expect(smallProfile.modelFileName == "sample-9x9.bin.gz")
+    #expect(smallProfile.defaultConfigFileName == "sample-analysis.cfg")
+    #expect(smallProfile.expectedByteCount == nil)
+    #expect(smallProfile.checksum == nil)
+    #expect(smallProfile.license.name == "Sample metadata only - no model distributed")
+    #expect(smallProfile.supportedBoardSizes == [GokanModelBoardSize(width: 9, height: 9)])
+
+    let fullProfile = try #require(catalog.profile(id: "sample-19x19-metadata"))
+    #expect(fullProfile.displayName == "Sample 19x19 Metadata Profile")
+    #expect(fullProfile.modelFileName == "sample-19x19.bin.gz")
+    #expect(fullProfile.defaultConfigFileName == "sample-analysis.cfg")
+    #expect(fullProfile.expectedByteCount == nil)
+    #expect(fullProfile.checksum == nil)
+    #expect(fullProfile.supportedBoardSizes == [GokanModelBoardSize(width: 19, height: 19)])
+}
+
+@Test
 func catalogRejectsUnsupportedSchemaVersion() {
     #expect(throws: GokanModelCatalogError.unsupportedSchemaVersion(2)) {
         try GokanModelCatalog(schemaVersion: 2, profiles: [])
@@ -148,4 +176,10 @@ private func fixtureProfile(
         checksum: try GokanModelChecksum(sha256: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"),
         license: GokanModelLicense(name: "Fixture")
     )
+}
+
+private func sampleModelCatalogData() throws -> Data {
+    let testsDirectory = URL(filePath: #filePath).deletingLastPathComponent()
+    let packageRoot = testsDirectory.deletingLastPathComponent().deletingLastPathComponent()
+    return try Data(contentsOf: packageRoot.appending(path: "app/Shared/Resources/SampleModelCatalog.json"))
 }

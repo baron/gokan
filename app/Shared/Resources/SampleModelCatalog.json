@@ -1,0 +1,56 @@
+{
+  "profiles": [
+    {
+      "defaultConfigFileName": "sample-analysis.cfg",
+      "description": "Metadata-only 9x9 sample profile for exercising catalog import and cache status UI.",
+      "deviceSuitability": [
+        {
+          "note": "Small fixture metadata; no model file is distributed.",
+          "platform": "iOS",
+          "tier": "small"
+        },
+        {
+          "note": "Small fixture metadata; no model file is distributed.",
+          "platform": "macOS",
+          "tier": "small"
+        }
+      ],
+      "displayName": "Sample 9x9 Metadata Profile",
+      "id": "sample-9x9-metadata",
+      "license": {
+        "name": "Sample metadata only - no model distributed"
+      },
+      "modelFileName": "sample-9x9.bin.gz",
+      "supportedBoardSizes": [
+        {
+          "height": 9,
+          "width": 9
+        }
+      ]
+    },
+    {
+      "defaultConfigFileName": "sample-analysis.cfg",
+      "description": "Metadata-only 19x19 sample profile for exercising catalog import and cache status UI.",
+      "deviceSuitability": [
+        {
+          "note": "Balanced fixture metadata; no model file is distributed.",
+          "platform": "macOS",
+          "tier": "balanced"
+        }
+      ],
+      "displayName": "Sample 19x19 Metadata Profile",
+      "id": "sample-19x19-metadata",
+      "license": {
+        "name": "Sample metadata only - no model distributed"
+      },
+      "modelFileName": "sample-19x19.bin.gz",
+      "supportedBoardSizes": [
+        {
+          "height": 19,
+          "width": 19
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 1
+}

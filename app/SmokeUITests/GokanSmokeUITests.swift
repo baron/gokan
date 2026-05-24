@@ -28,6 +28,30 @@ final class GokanSmokeUITests: XCTestCase {
     }
 
     @MainActor
+    func testLaunchPreloadsSampleModelCatalog() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["GOKAN_UI_TEST_FORCE_MOCK_ENGINE"] = "1"
+        app.launchEnvironment["GOKAN_UI_TEST_PRELOAD_MODEL_CATALOG_RESOURCE"] = "SampleModelCatalog"
+        app.launchEnvironment["GOKAN_UI_TEST_ENGINE_KIND"] = "kataGo"
+        app.launchEnvironment["GOKAN_UI_TEST_MODEL_PROFILE_ID"] = "sample-9x9-metadata"
+        app.launch()
+
+        let catalogStatus = app.descendants(matching: .any)["gokan.model-catalog-status"]
+        XCTAssertTrue(scrollUntilExists(catalogStatus, in: app))
+        XCTAssertTrue(waitFor(catalogStatus, toContain: "2 model profiles loaded."))
+
+        let modelStatus = app.descendants(matching: .any)["gokan.katago-model-status"]
+        XCTAssertTrue(scrollUntilExists(modelStatus, in: app))
+        XCTAssertTrue(waitFor(modelStatus, toContain: "Model cache root is not configured."))
+
+        let profileDetails = app.descendants(matching: .any)["gokan.model-profile-details"]
+        XCTAssertTrue(scrollUntilExists(profileDetails, in: app))
+        let profileName = app.descendants(matching: .any)["gokan.model-profile-name"]
+        XCTAssertTrue(scrollUntilExists(profileName, in: app))
+        XCTAssertTrue(waitFor(profileName, toContain: "Sample 9x9 Metadata Profile"))
+    }
+
+    @MainActor
     private func scrollUntilExists(_ element: XCUIElement, in app: XCUIApplication, attempts: Int = 6) -> Bool {
         if element.waitForExistence(timeout: 3) {
             return true

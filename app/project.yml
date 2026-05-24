@@ -25,6 +25,10 @@ targets:
       - path: Shared
         includes:
           - "**/*.swift"
+      - path: Shared/Resources
+        includes:
+          - "**/*.json"
+        buildPhase: resources
       - path: iOS
         includes:
           - "**/*.swift"
@@ -47,6 +51,10 @@ targets:
       - path: Shared
         includes:
           - "**/*.swift"
+      - path: Shared/Resources
+        includes:
+          - "**/*.json"
+        buildPhase: resources
       - path: macOS
         includes:
           - "**/*.swift"

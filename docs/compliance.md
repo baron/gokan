@@ -19,6 +19,9 @@ Practical requirements:
   allows them.
 - Runtime catalog import stores only validated JSON metadata in local app
   settings. It does not copy, download, or distribute model binaries.
+- The bundled sample catalog is metadata-only and uses fictional sample profile
+  entries. It must not be treated as distribution of KataGo neural network files
+  or configs.
 - Treat profile selection in the app as metadata/path resolution only. It is
   not distribution of a model file unless a release also ships the file or a
   populated download mechanism.

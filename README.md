@@ -75,6 +75,12 @@ The app can show local cache readiness and verify SHA-256 checksums when profile
 metadata includes one. Manual KataGo model/config paths remain available and
 take precedence over selected profiles.
 
+`app/Shared/Resources/SampleModelCatalog.json` is a metadata-only sample catalog
+used to exercise catalog import and profile display in app tests. It does not
+include model or config binaries, does not download anything, and still requires
+user-provided files under the cache root before KataGo can run with a selected
+profile.
+
 Run the macOS development app:
 
 ```sh
