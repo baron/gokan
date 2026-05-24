@@ -1,0 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+// Copy to Local.xcconfig for local signing overrides.
+DEVELOPMENT_TEAM =

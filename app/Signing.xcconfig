@@ -1,0 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+
+DEVELOPMENT_TEAM =
+CODE_SIGN_STYLE = Automatic
+
+// Local.xcconfig is intentionally ignored. Contributors can use it for
+// DEVELOPMENT_TEAM, bundle IDs, provisioning profiles, or signing identities.
+#include? "Local.xcconfig"

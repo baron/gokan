@@ -3,6 +3,8 @@
 DerivedData/
 build/
 dist/
+app/Gokan.xcodeproj/
+app/Local.xcconfig
 
 # Local engine checkouts and build products can be large and branch-specific.
 engine/KataGo/
@@ -14,4 +16,3 @@ models/*.txt.gz
 models/*.ckpt
 models/*.pt
 models/*.pth
-

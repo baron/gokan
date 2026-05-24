@@ -1,0 +1,72 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+name: Gokan
+options:
+  bundleIdPrefix: com.gokan
+  deploymentTarget:
+    iOS: "17.0"
+    macOS: "14.0"
+packages:
+  GokanPackage:
+    path: ..
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+targets:
+  Gokan-iOS:
+    type: application
+    platform: iOS
+    configFiles:
+      Debug: Signing.xcconfig
+      Release: Signing.xcconfig
+    sources:
+      - path: Shared
+        includes:
+          - "**/*.swift"
+      - path: iOS
+        includes:
+          - "**/*.swift"
+    dependencies:
+      - package: GokanPackage
+        product: GokanUI
+    settings:
+      base:
+        PRODUCT_NAME: Gokan
+        PRODUCT_BUNDLE_IDENTIFIER: com.gokan.Gokan
+        INFOPLIST_FILE: Shared/Info-iOS.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+  Gokan-macOS:
+    type: application
+    platform: macOS
+    configFiles:
+      Debug: Signing.xcconfig
+      Release: Signing.xcconfig
+    sources:
+      - path: Shared
+        includes:
+          - "**/*.swift"
+      - path: macOS
+        includes:
+          - "**/*.swift"
+    dependencies:
+      - package: GokanPackage
+        product: GokanUI
+    settings:
+      base:
+        PRODUCT_NAME: Gokan
+        PRODUCT_BUNDLE_IDENTIFIER: com.gokan.Gokan
+        INFOPLIST_FILE: Shared/Info-macOS.plist
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        ENABLE_HARDENED_RUNTIME: "NO"
+schemes:
+  Gokan-iOS:
+    build:
+      targets:
+        Gokan-iOS: all
+  Gokan-macOS:
+    build:
+      targets:
+        Gokan-macOS: all
