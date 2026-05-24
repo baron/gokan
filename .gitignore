@@ -1,0 +1,17 @@
+.DS_Store
+.build/
+DerivedData/
+build/
+dist/
+
+# Local engine checkouts and build products can be large and branch-specific.
+engine/KataGo/
+engine/build-*/
+
+# Neural net files should be downloaded/cached, not committed.
+models/*.bin.gz
+models/*.txt.gz
+models/*.ckpt
+models/*.pt
+models/*.pth
+
