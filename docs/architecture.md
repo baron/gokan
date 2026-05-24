@@ -35,6 +35,11 @@ The current first implementation slice is a root Swift package with:
 - `GokanUI`: shared SwiftUI board and analysis shell;
 - `GokanMacApp`: runnable macOS development executable.
 
+`GokanCore` also includes an initial SGF document layer for serializing and
+parsing simple main-line game records. This is intentionally small for now:
+enough to support import/export tests and future document UI, not yet a full
+SGF game-tree implementation.
+
 ## Engine Boundary
 
 Start with a process boundary on macOS:
