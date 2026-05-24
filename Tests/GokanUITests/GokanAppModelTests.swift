@@ -411,6 +411,180 @@ func staleAnalysisDoesNotOverwriteNewerPosition() async throws {
 
 @MainActor
 @Test
+func analysisSnapshotSelectsTopCandidateByDefault() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    let first = BoardPoint(x: 3, y: 3)
+    let second = BoardPoint(x: 4, y: 4)
+
+    model.analysis = snapshot(with: [first, second])
+
+    #expect(model.selectedAnalysisCandidatePoint == first)
+    #expect(model.selectedAnalysisCandidate?.point == first)
+    #expect(model.canPlaySelectedAnalysisCandidate)
+}
+
+@MainActor
+@Test
+func selectAnalysisCandidateUpdatesSelectedPoint() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    let first = BoardPoint(x: 3, y: 3)
+    let second = BoardPoint(x: 4, y: 4)
+    model.analysis = snapshot(with: [first, second])
+
+    model.selectAnalysisCandidate(at: second)
+
+    #expect(model.selectedAnalysisCandidatePoint == second)
+    #expect(model.selectedAnalysisCandidate?.point == second)
+}
+
+@MainActor
+@Test
+func selectAnalysisCandidateIgnoresPointOutsideCurrentAnalysis() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    let candidatePoint = BoardPoint(x: 3, y: 3)
+    let unrelatedPoint = BoardPoint(x: 8, y: 8)
+    model.analysis = snapshot(with: [candidatePoint])
+
+    model.selectAnalysisCandidate(at: unrelatedPoint)
+
+    #expect(model.selectedAnalysisCandidatePoint == candidatePoint)
+}
+
+@MainActor
+@Test
+func selectedAnalysisCandidateIsPreservedAcrossSnapshotsWhenStillPresent() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    let first = BoardPoint(x: 3, y: 3)
+    let selected = BoardPoint(x: 4, y: 4)
+    let replacementTop = BoardPoint(x: 5, y: 5)
+    model.analysis = snapshot(with: [first, selected])
+    model.selectAnalysisCandidate(at: selected)
+
+    model.analysis = snapshot(with: [replacementTop, selected])
+
+    #expect(model.selectedAnalysisCandidatePoint == selected)
+    #expect(model.selectedAnalysisCandidate?.point == selected)
+}
+
+@MainActor
+@Test
+func selectedAnalysisCandidateFallsBackToTopWhenMissingFromNewSnapshot() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    let first = BoardPoint(x: 3, y: 3)
+    let selected = BoardPoint(x: 4, y: 4)
+    let replacementTop = BoardPoint(x: 5, y: 5)
+    model.analysis = snapshot(with: [first, selected])
+    model.selectAnalysisCandidate(at: selected)
+
+    model.analysis = snapshot(with: [replacementTop, first])
+
+    #expect(model.selectedAnalysisCandidatePoint == replacementTop)
+    #expect(model.selectedAnalysisCandidate?.point == replacementTop)
+}
+
+@MainActor
+@Test
+func emptyAnalysisSnapshotClearsSelectedCandidate() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    model.analysis = snapshot(with: [BoardPoint(x: 3, y: 3)])
+
+    model.analysis = snapshot(with: [])
+
+    #expect(model.selectedAnalysisCandidatePoint == nil)
+    #expect(model.selectedAnalysisCandidate == nil)
+    #expect(model.canPlaySelectedAnalysisCandidate == false)
+}
+
+@MainActor
+@Test
+func positionChangeClearsSelectedAnalysisCandidate() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    model.analysis = snapshot(with: [BoardPoint(x: 3, y: 3)])
+
+    model.play(at: BoardPoint(x: 4, y: 4))
+
+    #expect(model.analysis == nil)
+    #expect(model.selectedAnalysisCandidatePoint == nil)
+    #expect(model.selectedAnalysisCandidate == nil)
+}
+
+@MainActor
+@Test
+func engineSettingChangeClearsSelectedAnalysisCandidate() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    model.analysis = snapshot(with: [BoardPoint(x: 3, y: 3)])
+
+    model.engineKind = .kataGo
+
+    #expect(model.analysis == nil)
+    #expect(model.selectedAnalysisCandidatePoint == nil)
+    #expect(model.selectedAnalysisCandidate == nil)
+}
+
+@MainActor
+@Test
+func playSelectedAnalysisCandidateUsesExistingMovePipeline() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    let candidatePoint = BoardPoint(x: 3, y: 3)
+    let originalVersion = model.analysisRequestVersion
+    model.analysis = snapshot(with: [candidatePoint])
+
+    model.playSelectedAnalysisCandidate()
+
+    #expect(model.game.moves.count == 1)
+    #expect(model.game.board[candidatePoint] == .black)
+    #expect(model.selectedPoint == candidatePoint)
+    #expect(model.analysis == nil)
+    #expect(model.selectedAnalysisCandidatePoint == nil)
+    #expect(model.analysisRequestVersion == originalVersion + 1)
+}
+
+@MainActor
+@Test
+func illegalSelectedAnalysisCandidateIsNotPlayable() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    let suicidePoint = BoardPoint(x: 2, y: 2)
+    model.newGame(boardSize: BoardSize(width: 5, height: 5))
+    model.play(at: BoardPoint(x: 0, y: 0))
+    model.play(at: BoardPoint(x: 1, y: 2))
+    model.play(at: BoardPoint(x: 4, y: 4))
+    model.play(at: BoardPoint(x: 2, y: 1))
+    model.play(at: BoardPoint(x: 0, y: 4))
+    model.play(at: BoardPoint(x: 3, y: 2))
+    model.play(at: BoardPoint(x: 4, y: 0))
+    model.play(at: BoardPoint(x: 2, y: 3))
+    model.analysis = snapshot(with: [suicidePoint])
+    let originalMoveCount = model.game.moves.count
+
+    model.playSelectedAnalysisCandidate()
+
+    #expect(model.canPlaySelectedAnalysisCandidate == false)
+    #expect(model.game.moves.count == originalMoveCount)
+    #expect(model.game.board[suicidePoint] == nil)
+    #expect(model.analysis != nil)
+    #expect(model.selectedAnalysisCandidatePoint == suicidePoint)
+}
+
+@MainActor
+@Test
+func playSelectedAnalysisCandidateCreatesVariationFromReviewedPosition() throws {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    let alternatePoint = BoardPoint(x: 5, y: 5)
+    model.loadSGFText("(;GM[1]FF[4]SZ[9];B[ee];W[ef])")
+    model.previousMove()
+    model.analysis = snapshot(with: [alternatePoint])
+
+    model.playSelectedAnalysisCandidate()
+    let sgf = try model.exportSGFText()
+
+    #expect(model.game.board[BoardPoint(x: 4, y: 5)] == nil)
+    #expect(model.game.board[alternatePoint] == .white)
+    #expect(model.game.rootChildren[0].children.count == 2)
+    #expect(sgf == "(;GM[1]FF[4]CA[UTF-8]AP[Gokan]SZ[9];B[ee](;W[ef])(;W[ff]))\n")
+}
+
+@MainActor
+@Test
 func modelDefaultsToMockEngineStatus() {
     let model = GokanAppModel(engine: SilentAnalysisEngine())
 
@@ -591,6 +765,21 @@ private final class EngineFactoryProbe: @unchecked Sendable {
         defer { lock.unlock() }
         return body()
     }
+}
+
+private func snapshot(with points: [BoardPoint]) -> AnalysisSnapshot {
+    AnalysisSnapshot(
+        candidateMoves: points.enumerated().map { index, point in
+            CandidateMove(
+                point: point,
+                policy: 0.5 - Double(index) * 0.05,
+                winRate: 0.6 - Double(index) * 0.05,
+                visits: 100 - index
+            )
+        },
+        scoreLead: 1.5,
+        completedVisits: 100
+    )
 }
 
 private enum FactoryError: LocalizedError {

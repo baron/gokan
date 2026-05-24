@@ -295,6 +295,7 @@ private struct BoardWorkspaceView: View {
             GoBoardView(
                 board: model.game.board,
                 selectedPoint: model.selectedPoint,
+                selectedCandidatePoint: model.selectedAnalysisCandidatePoint,
                 candidateMoves: model.analysis?.candidateMoves ?? [],
                 onPlay: model.play(at:)
             )
@@ -302,7 +303,14 @@ private struct BoardWorkspaceView: View {
 
             Divider()
 
-            AnalysisPanelView(snapshot: model.analysis, error: model.analysisError)
+            AnalysisPanelView(
+                snapshot: model.analysis,
+                error: model.analysisError,
+                selectedCandidatePoint: model.selectedAnalysisCandidatePoint,
+                canPlaySelectedCandidate: model.canPlaySelectedAnalysisCandidate,
+                onSelectCandidate: model.selectAnalysisCandidate(_:),
+                onPlayCandidate: model.playSelectedAnalysisCandidate
+            )
                 .frame(minWidth: 260, idealWidth: 300, maxWidth: 360)
         }
         .navigationTitle("Board")
@@ -312,6 +320,10 @@ private struct BoardWorkspaceView: View {
 private struct AnalysisPanelView: View {
     let snapshot: AnalysisSnapshot?
     let error: String?
+    let selectedCandidatePoint: BoardPoint?
+    let canPlaySelectedCandidate: Bool
+    let onSelectCandidate: (CandidateMove) -> Void
+    let onPlayCandidate: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -323,8 +335,20 @@ private struct AnalysisPanelView: View {
             } else if let snapshot {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(snapshot.candidateMoves) { move in
-                        CandidateMoveRow(move: move)
+                        Button {
+                            onSelectCandidate(move)
+                        } label: {
+                            CandidateMoveRow(move: move, isSelected: selectedCandidatePoint == move.point)
+                        }
+                        .buttonStyle(.plain)
                     }
+
+                    Button {
+                        onPlayCandidate()
+                    } label: {
+                        Label("Play Candidate", systemImage: "play.circle")
+                    }
+                    .disabled(canPlaySelectedCandidate == false)
                 }
             } else {
                 ContentUnavailableView("No analysis yet", systemImage: "sparkles")
@@ -338,9 +362,14 @@ private struct AnalysisPanelView: View {
 
 private struct CandidateMoveRow: View {
     let move: CandidateMove
+    let isSelected: Bool
 
     var body: some View {
-        HStack {
+        HStack(spacing: 8) {
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                .foregroundStyle(isSelected ? Color.blue : Color.secondary)
+                .frame(width: 18)
+
             Text("\(move.point.x + 1), \(move.point.y + 1)")
                 .font(.body.monospacedDigit())
             Spacer()
@@ -350,5 +379,7 @@ private struct CandidateMoveRow: View {
                 .foregroundStyle(.tertiary)
                 .monospacedDigit()
         }
+        .contentShape(Rectangle())
+        .padding(.vertical, 2)
     }
 }

@@ -7,17 +7,20 @@ import GokanEngine
 public struct GoBoardView: View {
     public let board: GoBoard
     public let selectedPoint: BoardPoint?
+    public let selectedCandidatePoint: BoardPoint?
     public let candidateMoves: [CandidateMove]
     public let onPlay: (BoardPoint) -> Void
 
     public init(
         board: GoBoard,
         selectedPoint: BoardPoint? = nil,
+        selectedCandidatePoint: BoardPoint? = nil,
         candidateMoves: [CandidateMove] = [],
         onPlay: @escaping (BoardPoint) -> Void
     ) {
         self.board = board
         self.selectedPoint = selectedPoint
+        self.selectedCandidatePoint = selectedCandidatePoint
         self.candidateMoves = candidateMoves
         self.onPlay = onPlay
     }
@@ -62,6 +65,7 @@ public struct GoBoardView: View {
                         color: board[point],
                         candidate: candidateMoves.first { $0.point == point },
                         isSelected: selectedPoint == point,
+                        isSelectedCandidate: selectedCandidatePoint == point,
                         spacing: spacing,
                         onPlay: onPlay
                     )
@@ -83,6 +87,7 @@ private struct BoardIntersectionView: View {
     let color: StoneColor?
     let candidate: CandidateMove?
     let isSelected: Bool
+    let isSelectedCandidate: Bool
     let spacing: CGFloat
     let onPlay: (BoardPoint) -> Void
 
@@ -98,10 +103,13 @@ private struct BoardIntersectionView: View {
 
                 if let candidate, color == nil {
                     Circle()
-                        .stroke(.blue.opacity(0.7), lineWidth: 2)
+                        .fill(isSelectedCandidate ? .blue.opacity(0.14) : .clear)
+                    Circle()
+                        .stroke(.blue.opacity(isSelectedCandidate ? 0.95 : 0.7), lineWidth: isSelectedCandidate ? 3 : 2)
                     Text("\(Int(candidate.winRate * 100))")
                         .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.blue)
+                        .fontWeight(isSelectedCandidate ? .bold : .regular)
+                        .foregroundStyle(isSelectedCandidate ? Color.primary : Color.blue)
                 }
 
                 if isSelected {

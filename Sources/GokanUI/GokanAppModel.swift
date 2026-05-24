@@ -72,7 +72,11 @@ public typealias AnalysisEngineFactory = @Sendable (AnalysisEngineSelection) thr
 public final class GokanAppModel {
     public var game = GameRecord()
     public var selectedPoint: BoardPoint?
-    public var analysis: AnalysisSnapshot?
+    public var analysis: AnalysisSnapshot? {
+        didSet {
+            reconcileSelectedAnalysisCandidate()
+        }
+    }
     public var analysisError: String?
     public var documentError: String?
     public var sgfText = "" {
@@ -87,6 +91,7 @@ public final class GokanAppModel {
     public var exportedSGFText = ""
     public private(set) var positionVersion = 0
     public private(set) var analysisRequestVersion = 0
+    public private(set) var selectedAnalysisCandidatePoint: BoardPoint?
     public var engineKind: AnalysisEngineKind = .mock {
         didSet {
             engineSelectionDidChange()
@@ -115,6 +120,28 @@ public final class GokanAppModel {
         refreshEngineStatus()
     }
 
+    public var selectedAnalysisCandidate: CandidateMove? {
+        guard let selectedAnalysisCandidatePoint else {
+            return nil
+        }
+
+        return analysis?.candidateMoves.first { $0.point == selectedAnalysisCandidatePoint }
+    }
+
+    public var canPlaySelectedAnalysisCandidate: Bool {
+        guard let candidate = selectedAnalysisCandidate else {
+            return false
+        }
+
+        var probe = game
+        do {
+            try probe.play(.play(candidate.point))
+            return true
+        } catch {
+            return false
+        }
+    }
+
     public func play(at point: BoardPoint) {
         do {
             try game.play(.play(point))
@@ -122,6 +149,27 @@ public final class GokanAppModel {
         } catch {
             analysisError = String(describing: error)
         }
+    }
+
+    public func selectAnalysisCandidate(_ candidate: CandidateMove) {
+        selectAnalysisCandidate(at: candidate.point)
+    }
+
+    public func selectAnalysisCandidate(at point: BoardPoint) {
+        guard analysis?.candidateMoves.contains(where: { $0.point == point }) == true else {
+            return
+        }
+
+        selectedAnalysisCandidatePoint = point
+    }
+
+    public func playSelectedAnalysisCandidate() {
+        guard canPlaySelectedAnalysisCandidate,
+              let point = selectedAnalysisCandidate?.point else {
+            return
+        }
+
+        play(at: point)
     }
 
     public func pass() {
@@ -321,6 +369,21 @@ public final class GokanAppModel {
         analysis = nil
         analysisError = nil
         analysisRequestVersion += 1
+    }
+
+    private func reconcileSelectedAnalysisCandidate() {
+        guard let candidateMoves = analysis?.candidateMoves,
+              candidateMoves.isEmpty == false else {
+            selectedAnalysisCandidatePoint = nil
+            return
+        }
+
+        if let selectedAnalysisCandidatePoint,
+           candidateMoves.contains(where: { $0.point == selectedAnalysisCandidatePoint }) {
+            return
+        }
+
+        selectedAnalysisCandidatePoint = candidateMoves.first?.point
     }
 
     private var selectedMovePoint: BoardPoint? {
