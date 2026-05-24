@@ -44,7 +44,7 @@ func appInfoPlistsRegisterSGFDocuments(plistName: String) throws {
     #expect(sgfDocument["LSHandlerRank"] as? String == "Alternate")
     #expect(sgfDocument["LSItemContentTypes"] as? [String] == ["com.gokan.sgf"])
 
-    let typeDeclarations = try #require(plist["UTImportedTypeDeclarations"] as? [[String: Any]])
+    let typeDeclarations = try #require(plist["UTExportedTypeDeclarations"] as? [[String: Any]])
     let sgfType = try #require(typeDeclarations.first)
     #expect(sgfType["UTTypeIdentifier"] as? String == "com.gokan.sgf")
     #expect(sgfType["UTTypeDescription"] as? String == "Smart Game Format")

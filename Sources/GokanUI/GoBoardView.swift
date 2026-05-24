@@ -78,6 +78,7 @@ public struct GoBoardView: View {
         }
         .aspectRatio(1, contentMode: .fit)
         .frame(minWidth: 320, minHeight: 320)
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("Go board")
     }
 }
@@ -122,6 +123,7 @@ private struct BoardIntersectionView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Point \(point.x + 1), \(point.y + 1)")
+        .accessibilityIdentifier("gokan.point.\(point.x + 1).\(point.y + 1)")
     }
 
     private var stoneFill: some ShapeStyle {

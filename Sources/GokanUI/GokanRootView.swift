@@ -6,9 +6,15 @@ import GokanCore
 import GokanEngine
 
 public struct GokanRootView: View {
-    @State private var model = GokanAppModel()
+    private let initialSGFText: String?
+    @State private var model: GokanAppModel
+    @State private var didLoadInitialSGFText = false
 
-    public init() {}
+    @MainActor
+    public init(initialSGFText: String? = nil, forceMockEngine: Bool = false) {
+        self.initialSGFText = initialSGFText
+        _model = State(initialValue: forceMockEngine ? GokanAppModel(engine: MockAnalysisEngine()) : GokanAppModel())
+    }
 
     public var body: some View {
         NavigationSplitView {
@@ -22,6 +28,20 @@ public struct GokanRootView: View {
         .onOpenURL { url in
             model.loadSGFFile(at: url)
         }
+        .onAppear {
+            loadInitialSGFTextIfNeeded()
+        }
+    }
+
+    private func loadInitialSGFTextIfNeeded() {
+        guard didLoadInitialSGFText == false,
+              let initialSGFText,
+              initialSGFText.isEmpty == false else {
+            return
+        }
+
+        didLoadInitialSGFText = true
+        model.loadSGFText(initialSGFText)
     }
 }
 
@@ -35,8 +55,11 @@ private struct SidebarView: View {
         List {
             Section("Game") {
                 Label("\(model.game.board.size.width)x\(model.game.board.size.height)", systemImage: "square.grid.3x3")
+                    .accessibilityIdentifier("gokan.board-size")
                 Label("Move \(model.game.currentMoveIndex) / \(model.game.moves.count)", systemImage: "list.number")
+                    .accessibilityIdentifier("gokan.move-count")
                 Label("\(model.game.nextPlayer.rawValue.capitalized) to play", systemImage: "circle.lefthalf.filled")
+                    .accessibilityIdentifier("gokan.next-player")
             }
 
             Section("Controls") {
@@ -51,6 +74,7 @@ private struct SidebarView: View {
                 } label: {
                     Label("Pass", systemImage: "arrow.uturn.forward")
                 }
+                .accessibilityIdentifier("gokan.pass")
 
                 HStack {
                     Button {
@@ -200,7 +224,9 @@ private struct SidebarView: View {
             if let analysis = model.analysis {
                 Section("Analysis") {
                     Label("\(analysis.completedVisits) visits", systemImage: "cpu")
+                        .accessibilityIdentifier("gokan.analysis-visits")
                     Label(String(format: "%+.1f lead", analysis.scoreLead), systemImage: "chart.xyaxis.line")
+                        .accessibilityIdentifier("gokan.analysis-score-lead")
                 }
             }
         }
@@ -341,6 +367,7 @@ private struct AnalysisPanelView: View {
                             CandidateMoveRow(move: move, isSelected: selectedCandidatePoint == move.point)
                         }
                         .buttonStyle(.plain)
+                        .accessibilityIdentifier("gokan.candidate.\(move.point.x + 1).\(move.point.y + 1)")
                     }
 
                     Button {

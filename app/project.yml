@@ -61,12 +61,50 @@ targets:
         CODE_SIGN_IDENTITY: "-"
         CODE_SIGN_STYLE: Manual
         ENABLE_HARDENED_RUNTIME: "NO"
+  Gokan-iOS-UITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: SmokeUITests
+        includes:
+          - "**/*.swift"
+    dependencies:
+      - target: Gokan-iOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.gokan.Gokan.iOSUITests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: Gokan-iOS
+  Gokan-macOS-UITests:
+    type: bundle.ui-testing
+    platform: macOS
+    sources:
+      - path: SmokeUITests
+        includes:
+          - "**/*.swift"
+    dependencies:
+      - target: Gokan-macOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.gokan.Gokan.macOSUITests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        TEST_TARGET_NAME: Gokan-macOS
 schemes:
   Gokan-iOS:
     build:
       targets:
         Gokan-iOS: all
+        Gokan-iOS-UITests: [test]
+    test:
+      targets:
+        - Gokan-iOS-UITests
   Gokan-macOS:
     build:
       targets:
         Gokan-macOS: all
+        Gokan-macOS-UITests: [test]
+    test:
+      targets:
+        - Gokan-macOS-UITests

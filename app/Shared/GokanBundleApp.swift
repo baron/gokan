@@ -7,7 +7,10 @@ import GokanUI
 struct GokanBundleApp: App {
     var body: some Scene {
         WindowGroup("Gokan") {
-            GokanRootView()
+            GokanRootView(
+                initialSGFText: GokanLaunchOptions.initialSGFText,
+                forceMockEngine: GokanLaunchOptions.forceMockEngine
+            )
         }
 
         #if os(macOS)
@@ -22,5 +25,15 @@ struct GokanBundleApp: App {
             .frame(width: 360)
         }
         #endif
+    }
+}
+
+private enum GokanLaunchOptions {
+    static var initialSGFText: String? {
+        ProcessInfo.processInfo.environment["GOKAN_UI_TEST_SGF"]
+    }
+
+    static var forceMockEngine: Bool {
+        ProcessInfo.processInfo.environment["GOKAN_UI_TEST_FORCE_MOCK_ENGINE"] == "1"
     }
 }
