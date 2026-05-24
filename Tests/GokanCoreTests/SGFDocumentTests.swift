@@ -32,8 +32,20 @@ func parsesSimpleSgfIntoGameRecord() throws {
 
     #expect(document.boardSize == BoardSize(width: 9, height: 9))
     #expect(game.moves.count == 3)
+    #expect(game.currentMoveIndex == 3)
     #expect(game.board[BoardPoint(x: 4, y: 4)] == .black)
     #expect(game.board[BoardPoint(x: 4, y: 5)] == .white)
+}
+
+@Test
+func serializesFullGameRecordWhileReviewingEarlierMove() throws {
+    var game = try SGFDocument.parse("(;GM[1]FF[4]SZ[9];B[ee];W[ef])").gameRecord()
+    try game.stepBackward()
+
+    let sgf = try SGFDocument(game: game).serialize()
+
+    #expect(game.currentMoveIndex == 1)
+    #expect(sgf == "(;GM[1]FF[4]CA[UTF-8]AP[Gokan]SZ[9];B[ee];W[ef])\n")
 }
 
 @Test

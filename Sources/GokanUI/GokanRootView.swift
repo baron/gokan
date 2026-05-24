@@ -35,7 +35,7 @@ private struct SidebarView: View {
         List {
             Section("Game") {
                 Label("\(model.game.board.size.width)x\(model.game.board.size.height)", systemImage: "square.grid.3x3")
-                Label("\(model.game.moves.count) moves", systemImage: "list.number")
+                Label("Move \(model.game.currentMoveIndex) / \(model.game.moves.count)", systemImage: "list.number")
                 Label("\(model.game.nextPlayer.rawValue.capitalized) to play", systemImage: "circle.lefthalf.filled")
             }
 
@@ -51,6 +51,41 @@ private struct SidebarView: View {
                 } label: {
                     Label("Pass", systemImage: "arrow.uturn.forward")
                 }
+
+                HStack {
+                    Button {
+                        model.goToFirstMove()
+                    } label: {
+                        Image(systemName: "backward.end")
+                    }
+                    .disabled(model.game.canStepBackward == false)
+                    .help("First move")
+
+                    Button {
+                        model.previousMove()
+                    } label: {
+                        Image(systemName: "chevron.left")
+                    }
+                    .disabled(model.game.canStepBackward == false)
+                    .help("Previous move")
+
+                    Button {
+                        model.nextMove()
+                    } label: {
+                        Image(systemName: "chevron.right")
+                    }
+                    .disabled(model.game.canStepForward == false)
+                    .help("Next move")
+
+                    Button {
+                        model.goToLastMove()
+                    } label: {
+                        Image(systemName: "forward.end")
+                    }
+                    .disabled(model.game.canStepForward == false)
+                    .help("Last move")
+                }
+                .buttonStyle(.borderless)
 
                 Button {
                     do {

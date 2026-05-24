@@ -64,6 +64,7 @@ func loadSGFTextReplacesCurrentGameTransactionally() {
 
     #expect(model.game.board.size == BoardSize(width: 9, height: 9))
     #expect(model.game.moves.count == 2)
+    #expect(model.game.currentMoveIndex == 2)
     #expect(model.game.board[BoardPoint(x: 4, y: 4)] == .black)
     #expect(model.game.board[BoardPoint(x: 4, y: 5)] == .white)
     #expect(model.documentError == nil)
@@ -168,6 +169,89 @@ func exportSGFDataSerializesCurrentGameAsUTF8() throws {
 
     #expect(String(data: data, encoding: .utf8) == "(;GM[1]FF[4]CA[UTF-8]AP[Gokan]SZ[9];B[ee])\n")
     #expect(model.documentError == nil)
+}
+
+@MainActor
+@Test
+func previousMoveUpdatesBoardAndClearsStaleAnalysis() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    model.loadSGFText("(;GM[1]FF[4]SZ[9];B[ee];W[ef])")
+    model.analysis = AnalysisSnapshot(
+        candidateMoves: [CandidateMove(point: BoardPoint(x: 3, y: 3), policy: 0.5, winRate: 0.5, visits: 10)],
+        scoreLead: 1,
+        completedVisits: 10
+    )
+    let originalVersion = model.analysisRequestVersion
+
+    model.previousMove()
+
+    #expect(model.game.currentMoveIndex == 1)
+    #expect(model.game.board[BoardPoint(x: 4, y: 4)] == .black)
+    #expect(model.game.board[BoardPoint(x: 4, y: 5)] == nil)
+    #expect(model.selectedPoint == BoardPoint(x: 4, y: 4))
+    #expect(model.analysis == nil)
+    #expect(model.analysisRequestVersion == originalVersion + 1)
+}
+
+@MainActor
+@Test
+func nextMoveRestoresReviewedBoard() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    model.loadSGFText("(;GM[1]FF[4]SZ[9];B[ee];W[ef])")
+    model.previousMove()
+
+    model.nextMove()
+
+    #expect(model.game.currentMoveIndex == 2)
+    #expect(model.game.board[BoardPoint(x: 4, y: 5)] == .white)
+    #expect(model.selectedPoint == BoardPoint(x: 4, y: 5))
+}
+
+@MainActor
+@Test
+func reviewNavigationAtBoundariesDoesNotRetriggerAnalysis() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    let originalVersion = model.analysisRequestVersion
+
+    model.previousMove()
+    model.goToFirstMove()
+    model.nextMove()
+    model.goToLastMove()
+
+    #expect(model.game.currentMoveIndex == 0)
+    #expect(model.analysisRequestVersion == originalVersion)
+}
+
+@MainActor
+@Test
+func analysisRequestUsesReviewedMovePrefix() async {
+    let engine = RecordingAnalysisEngine()
+    let model = GokanAppModel(engine: engine)
+    model.loadSGFText("(;GM[1]FF[4]SZ[9];B[ee];W[ef])")
+    model.previousMove()
+
+    await model.analyze()
+
+    #expect(engine.lastRequest?.moves.count == 1)
+    #expect(engine.lastRequest?.board[BoardPoint(x: 4, y: 4)] == .black)
+    #expect(engine.lastRequest?.board[BoardPoint(x: 4, y: 5)] == nil)
+}
+
+@MainActor
+@Test
+func playingFromEarlierReviewMoveTruncatesFutureSGF() throws {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    model.loadSGFText("(;GM[1]FF[4]SZ[9];B[ee];W[ef])")
+    model.previousMove()
+
+    model.play(at: BoardPoint(x: 5, y: 5))
+    let sgf = try model.exportSGFText()
+
+    #expect(model.game.moves.count == 2)
+    #expect(model.game.currentMoveIndex == 2)
+    #expect(model.game.board[BoardPoint(x: 4, y: 5)] == nil)
+    #expect(model.game.board[BoardPoint(x: 5, y: 5)] == .white)
+    #expect(sgf == "(;GM[1]FF[4]CA[UTF-8]AP[Gokan]SZ[9];B[ee];W[ff])\n")
 }
 
 @MainActor
@@ -286,6 +370,32 @@ private struct SilentAnalysisEngine: GoAnalysisEngine {
         AsyncThrowingStream { continuation in
             continuation.finish()
         }
+    }
+}
+
+private final class RecordingAnalysisEngine: GoAnalysisEngine, @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedRequest: AnalysisRequest?
+
+    var lastRequest: AnalysisRequest? {
+        withLock {
+            storedRequest
+        }
+    }
+
+    func analyze(_ request: AnalysisRequest) async throws -> AsyncThrowingStream<AnalysisSnapshot, Error> {
+        withLock {
+            storedRequest = request
+        }
+        return AsyncThrowingStream { continuation in
+            continuation.finish()
+        }
+    }
+
+    private func withLock<T>(_ body: () -> T) -> T {
+        lock.lock()
+        defer { lock.unlock() }
+        return body()
     }
 }
 

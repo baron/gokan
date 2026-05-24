@@ -133,6 +133,58 @@ public final class GokanAppModel {
         }
     }
 
+    public func previousMove() {
+        guard game.canStepBackward else {
+            return
+        }
+
+        do {
+            try game.stepBackward()
+            positionDidChange(selectedPoint: selectedMovePoint, clearDocumentText: false)
+        } catch {
+            analysisError = String(describing: error)
+        }
+    }
+
+    public func nextMove() {
+        guard game.canStepForward else {
+            return
+        }
+
+        do {
+            try game.stepForward()
+            positionDidChange(selectedPoint: selectedMovePoint, clearDocumentText: false)
+        } catch {
+            analysisError = String(describing: error)
+        }
+    }
+
+    public func goToFirstMove() {
+        guard game.canStepBackward else {
+            return
+        }
+
+        do {
+            try game.goToStart()
+            positionDidChange(selectedPoint: nil, clearDocumentText: false)
+        } catch {
+            analysisError = String(describing: error)
+        }
+    }
+
+    public func goToLastMove() {
+        guard game.canStepForward else {
+            return
+        }
+
+        do {
+            try game.goToEnd()
+            positionDidChange(selectedPoint: selectedMovePoint, clearDocumentText: false)
+        } catch {
+            analysisError = String(describing: error)
+        }
+    }
+
     public func newGame(boardSize: BoardSize = .standard) {
         game = GameRecord(boardSize: boardSize)
         sgfText = ""
@@ -195,7 +247,7 @@ public final class GokanAppModel {
         let currentGame = game
         do {
             let engine = try makeAnalysisEngine()
-            let request = AnalysisRequest(board: currentGame.board, moves: currentGame.moves)
+            let request = AnalysisRequest(board: currentGame.board, moves: currentGame.appliedMoves)
             let stream = try await engine.analyze(request)
             for try await snapshot in stream {
                 guard Task.isCancelled == false,
@@ -246,6 +298,19 @@ public final class GokanAppModel {
         analysis = nil
         analysisError = nil
         analysisRequestVersion += 1
+    }
+
+    private var selectedMovePoint: BoardPoint? {
+        guard game.currentMoveIndex > 0 else {
+            return nil
+        }
+
+        switch game.moves[game.currentMoveIndex - 1].move {
+        case .play(let point):
+            return point
+        case .pass:
+            return nil
+        }
     }
 
     private func refreshEngineStatus() {

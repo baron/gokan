@@ -55,6 +55,13 @@ func appInfoPlistsRegisterSGFDocuments(plistName: String) throws {
     #expect(tagSpecification["public.mime-type"] as? String == "application/x-go-sgf")
 }
 
+@Test
+func iosInfoPlistSupportsOpeningDocumentsInPlace() throws {
+    let plist = try appInfoPlist(named: "Info-iOS.plist")
+
+    #expect(plist["LSSupportsOpeningDocumentsInPlace"] as? Bool == true)
+}
+
 private func appInfoPlist(named plistName: String) throws -> [String: Any] {
     let testsDirectory = URL(filePath: #filePath).deletingLastPathComponent()
     let packageRoot = testsDirectory.deletingLastPathComponent().deletingLastPathComponent()
