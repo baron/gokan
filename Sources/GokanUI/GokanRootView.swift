@@ -506,7 +506,11 @@ private struct SidebarView: View {
             "testtube.2"
         case .kataGoConfigured:
             "checkmark.circle"
-        case .kataGoIncomplete, .kataGoUnsupported:
+        case .kataGoIncomplete,
+             .kataGoMissingExecutable,
+             .kataGoMissingModel,
+             .kataGoMissingConfig,
+             .kataGoUnsupported:
             "exclamationmark.triangle"
         case .error:
             "xmark.octagon"
@@ -519,7 +523,11 @@ private struct SidebarView: View {
             .secondary
         case .kataGoConfigured:
             .green
-        case .kataGoIncomplete, .kataGoUnsupported:
+        case .kataGoIncomplete,
+             .kataGoMissingExecutable,
+             .kataGoMissingModel,
+             .kataGoMissingConfig,
+             .kataGoUnsupported:
             .orange
         case .error:
             .red

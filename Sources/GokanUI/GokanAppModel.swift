@@ -123,6 +123,9 @@ public enum EngineStatus: Equatable, Sendable {
     case mock
     case kataGoConfigured
     case kataGoIncomplete(missingFields: [String])
+    case kataGoMissingExecutable(path: String)
+    case kataGoMissingModel(path: String)
+    case kataGoMissingConfig(path: String)
     case kataGoUnsupported
     case error(String)
 
@@ -134,6 +137,12 @@ public enum EngineStatus: Equatable, Sendable {
             "KataGo paths are configured."
         case .kataGoIncomplete(let missingFields):
             "Missing \(missingFields.joined(separator: ", "))."
+        case .kataGoMissingExecutable(let path):
+            "KataGo executable was not found at \(path)."
+        case .kataGoMissingModel(let path):
+            "KataGo model was not found at \(path)."
+        case .kataGoMissingConfig(let path):
+            "KataGo config was not found at \(path)."
         case .kataGoUnsupported:
             "KataGo analysis is not available on iOS in this build."
         case .error(let message):
@@ -659,9 +668,14 @@ public final class GokanAppModel {
     }
 
     public func makeAnalysisEngine() throws -> any GoAnalysisEngine {
+        refreshEngineStatus()
         let selection = currentAnalysisEngineSelection()
         switch engineStatus {
-        case .kataGoIncomplete, .kataGoUnsupported:
+        case .kataGoIncomplete,
+             .kataGoMissingExecutable,
+             .kataGoMissingModel,
+             .kataGoMissingConfig,
+             .kataGoUnsupported:
             throw engineStatus
         case .mock, .kataGoConfigured, .error:
             break
@@ -834,9 +848,27 @@ public final class GokanAppModel {
                 return
             }
 
-            engineStatus = resolution.missingFields.isEmpty
-                ? .kataGoConfigured
-                : .kataGoIncomplete(missingFields: resolution.missingFields)
+            guard resolution.missingFields.isEmpty else {
+                engineStatus = .kataGoIncomplete(missingFields: resolution.missingFields)
+                return
+            }
+            guard let configuration = resolution.configuration else {
+                engineStatus = .error("KataGo configuration could not be resolved.")
+                return
+            }
+
+            do {
+                try configuration.validateFilePresence()
+                engineStatus = .kataGoConfigured
+            } catch KataGoEngineError.executableMissing(let url) {
+                engineStatus = .kataGoMissingExecutable(path: url.path)
+            } catch KataGoEngineError.modelMissing(let url) {
+                engineStatus = .kataGoMissingModel(path: url.path)
+            } catch KataGoEngineError.configMissing(let url) {
+                engineStatus = .kataGoMissingConfig(path: url.path)
+            } catch {
+                engineStatus = .error(error.localizedDescription)
+            }
         }
     }
 

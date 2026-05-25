@@ -12,4 +12,16 @@ public struct KataGoEngineConfiguration: Hashable, Sendable {
         self.modelURL = modelURL
         self.configURL = configURL
     }
+
+    public func validateFilePresence(fileManager: FileManager = .default) throws {
+        guard fileManager.fileExists(atPath: executableURL.path) else {
+            throw KataGoEngineError.executableMissing(executableURL)
+        }
+        guard fileManager.fileExists(atPath: modelURL.path) else {
+            throw KataGoEngineError.modelMissing(modelURL)
+        }
+        guard fileManager.fileExists(atPath: configURL.path) else {
+            throw KataGoEngineError.configMissing(configURL)
+        }
+    }
 }

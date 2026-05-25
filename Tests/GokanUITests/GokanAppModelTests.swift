@@ -819,6 +819,8 @@ func selectingKataGoWhenSubprocessUnsupportedReportsUnavailableStatus() async {
 @MainActor
 @Test
 func configuredKataGoSelectionIsPassedToEngineFactory() throws {
+    let temp = try TemporaryDirectory()
+    let files = try makeKataGoFileFixture(in: temp)
     let probe = EngineFactoryProbe()
     let model = GokanAppModel(
         engineFactory: probe.makeEngine(selection:),
@@ -826,11 +828,7 @@ func configuredKataGoSelectionIsPassedToEngineFactory() throws {
     )
 
     model.engineKind = .kataGo
-    model.kataGoSettings = KataGoPathSettings(
-        executablePath: "/usr/local/bin/katago",
-        modelPath: "/models/model.bin.gz",
-        configPath: "/configs/analysis.cfg"
-    )
+    model.kataGoSettings = files.settings
     _ = try model.makeAnalysisEngine()
 
     #expect(model.engineStatus == .kataGoConfigured)
@@ -838,18 +836,79 @@ func configuredKataGoSelectionIsPassedToEngineFactory() throws {
     #expect(
         probe.lastSelection == AnalysisEngineSelection(
             kind: .kataGo,
-            kataGoSettings: KataGoPathSettings(
-                executablePath: "/usr/local/bin/katago",
-                modelPath: "/models/model.bin.gz",
-                configPath: "/configs/analysis.cfg"
-            ),
+            kataGoSettings: files.settings,
             resolvedKataGoConfiguration: KataGoEngineConfiguration(
-                executableURL: URL(filePath: "/usr/local/bin/katago"),
-                modelURL: URL(filePath: "/models/model.bin.gz"),
-                configURL: URL(filePath: "/configs/analysis.cfg")
+                executableURL: files.executableURL,
+                modelURL: files.modelURL,
+                configURL: files.configURL
             )
         )
     )
+}
+
+@MainActor
+@Test
+func missingKataGoExecutableBlocksEngineFactory() async throws {
+    let temp = try TemporaryDirectory()
+    let files = try makeKataGoFileFixture(in: temp, createExecutable: false)
+    let probe = EngineFactoryProbe()
+    let model = GokanAppModel(
+        engineFactory: probe.makeEngine(selection:),
+        supportsKataGoSubprocess: true
+    )
+
+    model.engineKind = .kataGo
+    model.kataGoSettings = files.settings
+    await model.analyze()
+
+    let expectedStatus = EngineStatus.kataGoMissingExecutable(path: files.executableURL.path)
+    #expect(model.engineStatus == expectedStatus)
+    #expect(model.analysisError == expectedStatus.message)
+    #expect(probe.callCount == 0)
+    #expect(model.analysisDiagnostics?.outcome == .failed(message: expectedStatus.message))
+    #expect(model.analysisDiagnostics?.engineKind == .kataGo)
+    #expect(model.analysisDiagnostics?.snapshotsReceived == 0)
+}
+
+@MainActor
+@Test
+func makeAnalysisEngineRefreshesStaleMissingFileStatus() throws {
+    let temp = try TemporaryDirectory()
+    let files = try makeKataGoFileFixture(in: temp, createExecutable: false)
+    let probe = EngineFactoryProbe()
+    let model = GokanAppModel(
+        engineFactory: probe.makeEngine(selection:),
+        supportsKataGoSubprocess: true
+    )
+
+    model.engineKind = .kataGo
+    model.kataGoSettings = files.settings
+    #expect(model.engineStatus == .kataGoMissingExecutable(path: files.executableURL.path))
+
+    try writeData("katago", to: files.executableURL)
+    _ = try model.makeAnalysisEngine()
+
+    #expect(model.engineStatus == .kataGoConfigured)
+    #expect(probe.callCount == 1)
+}
+
+@MainActor
+@Test
+func missingKataGoModelAndConfigSurfaceSpecificStatuses() throws {
+    let temp = try TemporaryDirectory()
+    let missingModelFiles = try makeKataGoFileFixture(in: temp, createModel: false)
+    let model = GokanAppModel(
+        engine: SilentAnalysisEngine(),
+        supportsKataGoSubprocess: true
+    )
+
+    model.engineKind = .kataGo
+    model.kataGoSettings = missingModelFiles.settings
+    #expect(model.engineStatus == .kataGoMissingModel(path: missingModelFiles.modelURL.path))
+
+    let missingConfigFiles = try makeKataGoFileFixture(in: temp, prefix: "missing-config", createConfig: false)
+    model.kataGoSettings = missingConfigFiles.settings
+    #expect(model.engineStatus == .kataGoMissingConfig(path: missingConfigFiles.configURL.path))
 }
 
 @MainActor
@@ -977,6 +1036,8 @@ func loadingModelCatalogEnablesSelectedProfileResolution() throws {
     let catalog = try modelCatalog()
     let profile = try #require(catalog.profile(id: "tiny-dev"))
     let cache = GokanModelCache(rootURL: temp.url)
+    let executableURL = temp.url.appending(path: "bin/katago")
+    try writeData("katago", to: executableURL)
     try writeData("hello", to: cache.modelURL(for: profile))
     try writeData("config", to: try #require(cache.configURL(for: profile)))
     let model = GokanAppModel(
@@ -986,7 +1047,7 @@ func loadingModelCatalogEnablesSelectedProfileResolution() throws {
     )
 
     model.engineKind = .kataGo
-    model.kataGoSettings = KataGoPathSettings(executablePath: "/usr/local/bin/katago")
+    model.kataGoSettings = KataGoPathSettings(executablePath: executableURL.path)
     model.kataGoModelSettings = KataGoModelSettings(selectedProfileID: "tiny-dev", cacheRootPath: temp.url.path)
     model.loadModelCatalogData(try catalog.encode())
 
@@ -1021,6 +1082,8 @@ func loadingModelCatalogWhileKataGoInvalidatesAnalysisWhenResolutionChanges() th
     let initialCatalog = try modelCatalog()
     let initialProfile = try #require(initialCatalog.profile(id: "tiny-dev"))
     let cache = GokanModelCache(rootURL: temp.url)
+    let executableURL = temp.url.appending(path: "bin/katago")
+    try writeData("katago", to: executableURL)
     try writeData("hello", to: cache.modelURL(for: initialProfile))
     try writeData("config", to: try #require(cache.configURL(for: initialProfile)))
     let model = GokanAppModel(
@@ -1029,7 +1092,7 @@ func loadingModelCatalogWhileKataGoInvalidatesAnalysisWhenResolutionChanges() th
         modelCatalog: initialCatalog
     )
     model.engineKind = .kataGo
-    model.kataGoSettings = KataGoPathSettings(executablePath: "/usr/local/bin/katago")
+    model.kataGoSettings = KataGoPathSettings(executablePath: executableURL.path)
     model.kataGoModelSettings = KataGoModelSettings(selectedProfileID: "tiny-dev", cacheRootPath: temp.url.path)
     model.analysis = snapshot(with: [BoardPoint(x: 3, y: 3)])
     let originalVersion = model.analysisRequestVersion
@@ -1047,6 +1110,8 @@ func checksumVerificationResultIsDiscardedWhenCatalogChanges() async throws {
     let catalog = try modelCatalog()
     let profile = try #require(catalog.profile(id: "tiny-dev"))
     let cache = GokanModelCache(rootURL: temp.url)
+    let executableURL = temp.url.appending(path: "bin/katago")
+    try writeData("katago", to: executableURL)
     let payload = Data(repeating: 0x68, count: 32 * 1024 * 1024)
     try FileManager.default.createDirectory(at: cache.modelURL(for: profile).deletingLastPathComponent(), withIntermediateDirectories: true)
     try payload.write(to: cache.modelURL(for: profile))
@@ -1057,7 +1122,7 @@ func checksumVerificationResultIsDiscardedWhenCatalogChanges() async throws {
         modelCatalog: catalog
     )
     model.engineKind = .kataGo
-    model.kataGoSettings = KataGoPathSettings(executablePath: "/usr/local/bin/katago")
+    model.kataGoSettings = KataGoPathSettings(executablePath: executableURL.path)
     model.kataGoModelSettings = KataGoModelSettings(selectedProfileID: "tiny-dev", cacheRootPath: temp.url.path)
 
     let verification = Task {
@@ -1108,6 +1173,8 @@ func cachedModelProfileDerivesKataGoConfiguration() throws {
     let catalog = try modelCatalog()
     let cache = GokanModelCache(rootURL: temp.url)
     let profile = try #require(catalog.profile(id: "tiny-dev"))
+    let executableURL = temp.url.appending(path: "bin/katago")
+    try writeData("katago", to: executableURL)
     try writeData("hello", to: cache.modelURL(for: profile))
     try writeData("config", to: try #require(cache.configURL(for: profile)))
     let probe = EngineFactoryProbe()
@@ -1118,7 +1185,7 @@ func cachedModelProfileDerivesKataGoConfiguration() throws {
     )
 
     model.engineKind = .kataGo
-    model.kataGoSettings = KataGoPathSettings(executablePath: "/usr/local/bin/katago")
+    model.kataGoSettings = KataGoPathSettings(executablePath: executableURL.path)
     model.kataGoModelSettings = KataGoModelSettings(selectedProfileID: "tiny-dev", cacheRootPath: temp.url.path)
     _ = try model.makeAnalysisEngine()
 
@@ -1135,7 +1202,7 @@ func cachedModelProfileDerivesKataGoConfiguration() throws {
     #expect(
         probe.lastSelection?.resolvedKataGoConfiguration
             == KataGoEngineConfiguration(
-                executableURL: URL(filePath: "/usr/local/bin/katago"),
+                executableURL: executableURL,
                 modelURL: cache.modelURL(for: profile),
                 configURL: try #require(cache.configURL(for: profile))
             )
@@ -1209,7 +1276,9 @@ func modelProfileWithoutDefaultConfigReportsManualConfigRequired() throws {
 
 @MainActor
 @Test
-func rawModelPathTakesPrecedenceOverSelectedProfile() {
+func rawModelPathTakesPrecedenceOverSelectedProfile() throws {
+    let temp = try TemporaryDirectory()
+    let files = try makeKataGoFileFixture(in: temp)
     let model = GokanAppModel(
         engine: SilentAnalysisEngine(),
         supportsKataGoSubprocess: true,
@@ -1217,15 +1286,11 @@ func rawModelPathTakesPrecedenceOverSelectedProfile() {
     )
 
     model.engineKind = .kataGo
-    model.kataGoSettings = KataGoPathSettings(
-        executablePath: "/usr/local/bin/katago",
-        modelPath: "/manual/model.bin.gz",
-        configPath: "/manual/analysis.cfg"
-    )
+    model.kataGoSettings = files.settings
     model.kataGoModelSettings = KataGoModelSettings(selectedProfileID: "tiny-dev", cacheRootPath: "/missing/cache")
 
     #expect(model.engineStatus == .kataGoConfigured)
-    #expect(model.kataGoModelStatus == .manualPath(path: "/manual/model.bin.gz"))
+    #expect(model.kataGoModelStatus == .manualPath(path: files.modelURL.path))
     #expect(model.isUsingManualKataGoModelPath)
     #expect(model.canVerifySelectedKataGoModelChecksum == false)
 }
@@ -1278,6 +1343,8 @@ func successfulChecksumVerificationClearsPreviousMismatchEngineError() async thr
     let catalog = try modelCatalog()
     let cache = GokanModelCache(rootURL: temp.url)
     let profile = try #require(catalog.profile(id: "tiny-dev"))
+    let executableURL = temp.url.appending(path: "bin/katago")
+    try writeData("katago", to: executableURL)
     try writeData("wrong", to: cache.modelURL(for: profile))
     try writeData("config", to: try #require(cache.configURL(for: profile)))
     let model = GokanAppModel(
@@ -1287,7 +1354,7 @@ func successfulChecksumVerificationClearsPreviousMismatchEngineError() async thr
     )
 
     model.engineKind = .kataGo
-    model.kataGoSettings = KataGoPathSettings(executablePath: "/usr/local/bin/katago")
+    model.kataGoSettings = KataGoPathSettings(executablePath: executableURL.path)
     model.kataGoModelSettings = KataGoModelSettings(selectedProfileID: "tiny-dev", cacheRootPath: temp.url.path)
     await model.verifySelectedKataGoModelChecksum()
 
@@ -1397,13 +1464,11 @@ func runtimeFactoryErrorSurfacesAsAnalysisErrorAndEngineStatus() async {
 
 @MainActor
 @Test
-func engineSettingsPersistAcrossModelInstances() {
+func engineSettingsPersistAcrossModelInstances() throws {
+    let temp = try TemporaryDirectory()
+    let files = try makeKataGoFileFixture(in: temp, modelName: "g170.bin.gz")
     let defaults = isolatedDefaults()
-    let settings = KataGoPathSettings(
-        executablePath: "/usr/local/bin/katago",
-        modelPath: "/models/g170.bin.gz",
-        configPath: "/configs/analysis.cfg"
-    )
+    let settings = files.settings
     let firstModel = GokanAppModel(
         engine: SilentAnalysisEngine(),
         settingsDefaults: defaults.userDefaults,
@@ -1663,6 +1728,48 @@ private func alternateModelCatalog() throws -> GokanModelCatalog {
 private func writeData(_ text: String, to url: URL) throws {
     try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
     try Data(text.utf8).write(to: url)
+}
+
+private struct KataGoFileFixture {
+    let executableURL: URL
+    let modelURL: URL
+    let configURL: URL
+
+    var settings: KataGoPathSettings {
+        KataGoPathSettings(
+            executablePath: executableURL.path,
+            modelPath: modelURL.path,
+            configPath: configURL.path
+        )
+    }
+}
+
+private func makeKataGoFileFixture(
+    in temporaryDirectory: TemporaryDirectory,
+    prefix: String = "katago",
+    modelName: String = "model.bin.gz",
+    createExecutable: Bool = true,
+    createModel: Bool = true,
+    createConfig: Bool = true
+) throws -> KataGoFileFixture {
+    let rootURL = temporaryDirectory.url.appending(path: prefix)
+    let fixture = KataGoFileFixture(
+        executableURL: rootURL.appending(path: "bin/katago"),
+        modelURL: rootURL.appending(path: "models/\(modelName)"),
+        configURL: rootURL.appending(path: "configs/analysis.cfg")
+    )
+
+    if createExecutable {
+        try writeData("katago", to: fixture.executableURL)
+    }
+    if createModel {
+        try writeData("model", to: fixture.modelURL)
+    }
+    if createConfig {
+        try writeData("config", to: fixture.configURL)
+    }
+
+    return fixture
 }
 
 private final class TemporaryDirectory {

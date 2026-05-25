@@ -23,14 +23,6 @@ internal enum KataGoTransportFactory {
         _ configuration: KataGoEngineConfiguration,
         fileManager: FileManager = .default
     ) throws {
-        guard fileManager.fileExists(atPath: configuration.executableURL.path) else {
-            throw KataGoEngineError.executableMissing(configuration.executableURL)
-        }
-        guard fileManager.fileExists(atPath: configuration.modelURL.path) else {
-            throw KataGoEngineError.modelMissing(configuration.modelURL)
-        }
-        guard fileManager.fileExists(atPath: configuration.configURL.path) else {
-            throw KataGoEngineError.configMissing(configuration.configURL)
-        }
+        try configuration.validateFilePresence(fileManager: fileManager)
     }
 }
