@@ -316,6 +316,22 @@ public final class GokanAppModel {
         }
     }
 
+    public var currentNodeComment: String {
+        get {
+            game.currentNodeComment
+        }
+        set {
+            guard game.currentNodeComment != newValue else {
+                return
+            }
+
+            game.currentNodeComment = newValue
+            sgfText = ""
+            exportedSGFText = ""
+            documentError = nil
+        }
+    }
+
     public func play(at point: BoardPoint) {
         do {
             try game.play(.play(point))

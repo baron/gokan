@@ -133,6 +133,80 @@ func loadingSGFTextExposesGameMetadata() {
 
 @MainActor
 @Test
+func loadingSGFTextExposesCurrentNodeComments() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+
+    model.loadSGFText("(;GM[1]FF[4]SZ[9]C[Root note];B[ee]C[Black note];W[ef]C[White note])")
+
+    #expect(model.game.rootComment == "Root note")
+    #expect(model.currentNodeComment == "White note")
+
+    model.previousMove()
+
+    #expect(model.currentNodeComment == "Black note")
+
+    model.goToFirstMove()
+
+    #expect(model.currentNodeComment == "Root note")
+}
+
+@MainActor
+@Test
+func editingCurrentNodeCommentUpdatesExportWithoutInvalidatingAnalysis() async throws {
+    let candidatePoint = BoardPoint(x: 3, y: 3)
+    let model = GokanAppModel(engine: ScriptedAnalysisEngine(snapshots: [snapshot(with: [candidatePoint])]))
+    model.loadSGFText("(;GM[1]FF[4]SZ[9];B[ee]C[Old note])")
+    model.exportedSGFText = try model.exportSGFText()
+    await model.analyze()
+    let originalAnalysis = try #require(model.analysis)
+    let originalDiagnostics = try #require(model.analysisDiagnostics)
+    let originalPositionVersion = model.positionVersion
+    let originalAnalysisRequestVersion = model.analysisRequestVersion
+
+    model.documentError = "stale error"
+    model.currentNodeComment = #"New \ note ] text"#
+    let exported = try model.exportSGFText()
+
+    #expect(model.currentNodeComment == #"New \ note ] text"#)
+    #expect(exported == #"(;GM[1]FF[4]CA[UTF-8]AP[Gokan]SZ[9];B[ee]C[New \\ note \] text])"# + "\n")
+    #expect(model.sgfText.isEmpty)
+    #expect(model.documentError == nil)
+    #expect(model.analysis == originalAnalysis)
+    #expect(model.analysisDiagnostics == originalDiagnostics)
+    #expect(model.selectedAnalysisCandidatePoint == candidatePoint)
+    #expect(model.positionVersion == originalPositionVersion)
+    #expect(model.analysisRequestVersion == originalAnalysisRequestVersion)
+}
+
+@MainActor
+@Test
+func navigatingMovesUpdatesCurrentNodeComment() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    model.loadSGFText("(;GM[1]FF[4]SZ[9]C[Root];B[ee]C[Black];W[ef]C[White])")
+
+    #expect(model.currentNodeComment == "White")
+
+    model.previousMove()
+    #expect(model.currentNodeComment == "Black")
+
+    model.goToFirstMove()
+    #expect(model.currentNodeComment == "Root")
+}
+
+@MainActor
+@Test
+func newGameResetsCurrentNodeComment() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+    model.loadSGFText("(;GM[1]FF[4]SZ[9]C[Root];B[ee]C[Black])")
+
+    model.newGame(boardSize: BoardSize(width: 9, height: 9))
+
+    #expect(model.currentNodeComment.isEmpty)
+    #expect(model.game.rootComment.isEmpty)
+}
+
+@MainActor
+@Test
 func editingGameMetadataUpdatesExportWithoutInvalidatingAnalysis() async throws {
     let candidatePoint = BoardPoint(x: 3, y: 3)
     let model = GokanAppModel(engine: ScriptedAnalysisEngine(snapshots: [snapshot(with: [candidatePoint])]))

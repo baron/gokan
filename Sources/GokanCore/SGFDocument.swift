@@ -14,15 +14,26 @@ public struct SGFDocument: Hashable, Sendable {
     public var boardSize: BoardSize
     public var rootChildren: [GameTreeNode]
     public var metadata: GameMetadata
+    public var rootComment: String
 
     public init(
         boardSize: BoardSize = .standard,
         moves: [PlayedMove] = [],
         metadata: GameMetadata = .empty
     ) {
+        self.init(boardSize: boardSize, moves: moves, metadata: metadata, rootComment: "")
+    }
+
+    public init(
+        boardSize: BoardSize = .standard,
+        moves: [PlayedMove] = [],
+        metadata: GameMetadata = .empty,
+        rootComment: String
+    ) {
         self.boardSize = boardSize
-        self.rootChildren = Self.chain(from: moves)
+        self.rootChildren = Self.chain(from: moves.map { ParsedMoveNode(move: $0) })
         self.metadata = metadata
+        self.rootComment = rootComment
     }
 
     public init(
@@ -30,15 +41,26 @@ public struct SGFDocument: Hashable, Sendable {
         rootChildren: [GameTreeNode],
         metadata: GameMetadata = .empty
     ) {
+        self.init(boardSize: boardSize, rootChildren: rootChildren, metadata: metadata, rootComment: "")
+    }
+
+    public init(
+        boardSize: BoardSize = .standard,
+        rootChildren: [GameTreeNode],
+        metadata: GameMetadata = .empty,
+        rootComment: String
+    ) {
         self.boardSize = boardSize
         self.rootChildren = rootChildren
         self.metadata = metadata
+        self.rootComment = rootComment
     }
 
     public init(game: GameRecord) {
         self.boardSize = game.board.size
         self.rootChildren = game.rootChildren
         self.metadata = game.metadata
+        self.rootComment = game.rootComment
     }
 
     public var moves: [PlayedMove] {
@@ -53,12 +75,13 @@ public struct SGFDocument: Hashable, Sendable {
             expectedPlayer: nil,
             moveNumber: 1
         )
-        return try GameRecord(boardSize: boardSize, rootChildren: rootChildren, metadata: metadata)
+        return try GameRecord(boardSize: boardSize, rootChildren: rootChildren, metadata: metadata, rootComment: rootComment)
     }
 
     public func serialize() throws -> String {
         var output = "(;GM[1]FF[4]CA[UTF-8]AP[Gokan]SZ[\(serializedBoardSize)]"
         output += serializeMetadata()
+        output += serializeComment(rootComment)
         output += try serializeChildren(rootChildren)
         output += ")\n"
         return output
@@ -82,8 +105,9 @@ public struct SGFDocument: Hashable, Sendable {
         let size = try parseBoardSize(from: tree.properties.first(where: { $0.identifier == "SZ" })?.values.first)
         let document = SGFDocument(
             boardSize: size,
-            rootChildren: try nodes(from: tree),
-            metadata: metadata(from: tree.rootProperties)
+            rootChildren: try nodes(from: tree, isTopLevel: true),
+            metadata: metadata(from: tree.rootProperties),
+            rootComment: rootComment(from: tree)
         )
         _ = try document.gameRecord()
         return document
@@ -105,6 +129,23 @@ public struct SGFDocument: Hashable, Sendable {
         properties.first { $0.identifier == identifier }?.values.first ?? ""
     }
 
+    private static func rootComment(from tree: ParsedSGFTree) -> String {
+        var comments: [String] = []
+
+        for properties in tree.nodes {
+            if containsMoveProperty(in: properties) {
+                break
+            }
+
+            let comment = rootValue("C", in: properties)
+            if comment.isEmpty == false {
+                comments.append(comment)
+            }
+        }
+
+        return mergedComments(comments)
+    }
+
     private static func parseBoardSize(from value: String?) throws -> BoardSize {
         guard let value, value.isEmpty == false else {
             return .standard
@@ -122,22 +163,70 @@ public struct SGFDocument: Hashable, Sendable {
         return BoardSize(width: parts[0], height: parts[1])
     }
 
-    private static func nodes(from tree: ParsedSGFTree) throws -> [GameTreeNode] {
-        var nodes = chain(from: try moves(from: tree.properties))
-
-        if nodes.isEmpty {
-            return try tree.variations.flatMap(nodes(from:))
+    private static func nodes(from tree: ParsedSGFTree, isTopLevel: Bool = false) throws -> [GameTreeNode] {
+        let propertyNodes: ArraySlice<[SGFProperty]>
+        if isTopLevel {
+            propertyNodes = tree.nodes.drop(while: { containsMoveProperty(in: $0) == false })
+        } else {
+            propertyNodes = tree.nodes[...]
         }
 
-        let variationNodes = try tree.variations.map(nodes(from:)).filter { $0.isEmpty == false }
+        var lineNodes = chain(from: try parsedMoveNodes(from: propertyNodes))
+
+        if lineNodes.isEmpty {
+            return try tree.variations.flatMap { try nodes(from: $0) }
+        }
+
+        let variationNodes = try tree.variations.map { try nodes(from: $0) }.filter { $0.isEmpty == false }
         if variationNodes.isEmpty == false {
-            appendVariationNodes(variationNodes, toLastNodeIn: &nodes)
+            appendVariationNodes(variationNodes, toLastNodeIn: &lineNodes)
         }
+        return lineNodes
+    }
+
+    private static func parsedMoveNodes(from propertyNodes: ArraySlice<[SGFProperty]>) throws -> [ParsedMoveNode] {
+        var nodes: [ParsedMoveNode] = []
+        var pendingPrefixComment = ""
+
+        for properties in propertyNodes {
+            let comment = rootValue("C", in: properties)
+            let moveNodes = try parsedMoveNodes(from: properties)
+
+            if moveNodes.isEmpty {
+                if comment.isEmpty == false {
+                    if nodes.isEmpty {
+                        pendingPrefixComment = mergedComments([pendingPrefixComment, comment])
+                    } else {
+                        nodes[nodes.count - 1].comment = mergedComments([nodes[nodes.count - 1].comment, comment])
+                    }
+                }
+                continue
+            }
+
+            for (index, moveNode) in moveNodes.enumerated() {
+                guard index == 0 else {
+                    nodes.append(moveNode)
+                    continue
+                }
+
+                nodes.append(
+                    ParsedMoveNode(
+                        move: moveNode.move,
+                        comment: mergedComments([pendingPrefixComment, moveNode.comment])
+                    )
+                )
+                pendingPrefixComment = ""
+            }
+        }
+
         return nodes
     }
 
-    private static func moves(from properties: [SGFProperty]) throws -> [PlayedMove] {
-        try properties.compactMap { property -> PlayedMove? in
+    private static func parsedMoveNodes(from properties: [SGFProperty]) throws -> [ParsedMoveNode] {
+        let comment = rootValue("C", in: properties)
+        var didAttachComment = false
+
+        return try properties.compactMap { property -> ParsedMoveNode? in
             guard property.identifier == "B" || property.identifier == "W" else {
                 return nil
             }
@@ -145,23 +234,36 @@ public struct SGFDocument: Hashable, Sendable {
             let color: StoneColor = property.identifier == "B" ? .black : .white
             let value = property.values.first ?? ""
             let move: Move = value.isEmpty ? .pass : .play(try SGFCoordinates.decode(value))
-            return PlayedMove(color: color, move: move)
+            let node = ParsedMoveNode(
+                move: PlayedMove(color: color, move: move),
+                comment: didAttachComment ? "" : comment
+            )
+            didAttachComment = true
+            return node
         }
     }
 
-    private static func chain(from moves: [PlayedMove]) -> [GameTreeNode] {
+    private static func containsMoveProperty(in properties: [SGFProperty]) -> Bool {
+        properties.contains { $0.identifier == "B" || $0.identifier == "W" }
+    }
+
+    private static func mergedComments(_ comments: [String]) -> String {
+        comments.filter { $0.isEmpty == false }.joined(separator: "\n")
+    }
+
+    private static func chain(from moves: [ParsedMoveNode]) -> [GameTreeNode] {
         guard let firstMove = moves.first else {
             return []
         }
 
         if moves.count == 1 {
-            return [GameTreeNode(playedMove: firstMove)]
+            return [GameTreeNode(playedMove: firstMove.move, comment: firstMove.comment)]
         }
 
         let reversedMoves = moves.reversed()
         var node: GameTreeNode?
         for move in reversedMoves {
-            node = GameTreeNode(playedMove: move, children: node.map { [$0] } ?? [])
+            node = GameTreeNode(playedMove: move.move, comment: move.comment, children: node.map { [$0] } ?? [])
         }
         return node.map { [$0] } ?? []
     }
@@ -246,6 +348,7 @@ public struct SGFDocument: Hashable, Sendable {
             output += "[\(try SGFCoordinates.encode(point))]"
         }
 
+        output += serializeComment(node.comment)
         output += try serializeChildren(node.children)
         return output
     }
@@ -265,6 +368,14 @@ public struct SGFDocument: Hashable, Sendable {
         .joined()
     }
 
+    private func serializeComment(_ comment: String) -> String {
+        guard comment.isEmpty == false else {
+            return ""
+        }
+
+        return "C[\(escapedPropertyValue(comment))]"
+    }
+
     private func escapedPropertyValue(_ value: String) -> String {
         value.reduce(into: "") { result, character in
             if character == "\\" || character == "]" {
@@ -276,6 +387,16 @@ public struct SGFDocument: Hashable, Sendable {
 
     private var serializedBoardSize: String {
         boardSize.width == boardSize.height ? "\(boardSize.width)" : "\(boardSize.width):\(boardSize.height)"
+    }
+}
+
+private struct ParsedMoveNode: Hashable, Sendable {
+    let move: PlayedMove
+    var comment: String
+
+    init(move: PlayedMove, comment: String = "") {
+        self.move = move
+        self.comment = comment
     }
 }
 

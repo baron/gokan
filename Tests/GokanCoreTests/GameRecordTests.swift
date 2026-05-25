@@ -12,6 +12,67 @@ func defaultGameRecordMetadataIsEmpty() {
 }
 
 @Test
+func defaultGameRecordRootCommentIsEmpty() {
+    let game = GameRecord()
+
+    #expect(game.rootComment.isEmpty)
+    #expect(game.currentNodeComment.isEmpty)
+}
+
+@Test
+func currentNodeCommentEditsRootAtStart() {
+    var game = GameRecord(boardSize: BoardSize(width: 9, height: 9))
+
+    game.currentNodeComment = "Opening notes"
+
+    #expect(game.rootComment == "Opening notes")
+    #expect(game.currentNodeComment == "Opening notes")
+    #expect(game.currentMoveIndex == 0)
+    #expect(game.board.occupiedPoints.isEmpty)
+}
+
+@Test
+func currentNodeCommentFollowsReviewCursor() throws {
+    var game = GameRecord(boardSize: BoardSize(width: 9, height: 9))
+    try game.play(.play(BoardPoint(x: 4, y: 4)))
+    game.currentNodeComment = "Black approach"
+    try game.play(.play(BoardPoint(x: 4, y: 5)))
+    game.currentNodeComment = "White answer"
+
+    try game.stepBackward()
+
+    #expect(game.currentNodeComment == "Black approach")
+
+    try game.stepForward()
+
+    #expect(game.currentNodeComment == "White answer")
+}
+
+@Test
+func variationCommentsStayBranchLocal() throws {
+    var game = try SGFDocument.parse(
+        "(;GM[1]FF[4]SZ[9];B[ee]C[Main](;W[ef]C[First branch])(;W[ff]C[Second branch]))"
+    ).gameRecord()
+
+    #expect(game.currentNodeComment == "First branch")
+
+    try game.stepBackward()
+    #expect(game.currentNodeComment == "Main")
+
+    try game.selectVariation(at: 1)
+    #expect(game.currentNodeComment == "Second branch")
+
+    game.currentNodeComment = "Updated second branch"
+    try game.stepBackward()
+    try game.selectVariation(at: 0)
+    #expect(game.currentNodeComment == "First branch")
+
+    try game.stepBackward()
+    try game.selectVariation(at: 1)
+    #expect(game.currentNodeComment == "Updated second branch")
+}
+
+@Test
 func steppingBackwardRestoresPreviousBoard() throws {
     var game = GameRecord(boardSize: BoardSize(width: 9, height: 9))
     try game.play(.play(BoardPoint(x: 4, y: 4)))

@@ -17,11 +17,18 @@ public struct PlayedMove: Hashable, Sendable, Identifiable {
 public struct GameTreeNode: Hashable, Sendable, Identifiable {
     public let id: UUID
     public var playedMove: PlayedMove
+    public var comment: String
     public var children: [GameTreeNode]
 
-    public init(id: UUID = UUID(), playedMove: PlayedMove, children: [GameTreeNode] = []) {
+    public init(
+        id: UUID = UUID(),
+        playedMove: PlayedMove,
+        comment: String = "",
+        children: [GameTreeNode] = []
+    ) {
         self.id = id
         self.playedMove = playedMove
+        self.comment = comment
         self.children = children
     }
 }
@@ -64,16 +71,26 @@ public struct GameRecord: Hashable, Sendable {
     public private(set) var currentMoveIndex: Int
     public private(set) var rootChildren: [GameTreeNode]
     public var metadata: GameMetadata
+    public var rootComment: String
 
     private var selectedLinePath: [Int]
     private var simpleKoReferenceBoard: GoBoard?
 
     public init(boardSize: BoardSize = .standard, metadata: GameMetadata = .empty) {
+        self.init(boardSize: boardSize, metadata: metadata, rootComment: "")
+    }
+
+    public init(
+        boardSize: BoardSize = .standard,
+        metadata: GameMetadata = .empty,
+        rootComment: String
+    ) {
         self.board = GoBoard(size: boardSize)
         self.nextPlayer = .black
         self.currentMoveIndex = 0
         self.rootChildren = []
         self.metadata = metadata
+        self.rootComment = rootComment
         self.selectedLinePath = []
         self.simpleKoReferenceBoard = nil
     }
@@ -83,11 +100,21 @@ public struct GameRecord: Hashable, Sendable {
         rootChildren: [GameTreeNode],
         metadata: GameMetadata = .empty
     ) throws {
+        try self.init(boardSize: boardSize, rootChildren: rootChildren, metadata: metadata, rootComment: "")
+    }
+
+    public init(
+        boardSize: BoardSize = .standard,
+        rootChildren: [GameTreeNode],
+        metadata: GameMetadata = .empty,
+        rootComment: String
+    ) throws {
         self.board = GoBoard(size: boardSize)
         self.nextPlayer = .black
         self.currentMoveIndex = 0
         self.rootChildren = rootChildren
         self.metadata = metadata
+        self.rootComment = rootComment
         self.selectedLinePath = []
         self.simpleKoReferenceBoard = nil
         self.selectedLinePath = selectedLineFollowingFirstChildren(from: [])
@@ -100,6 +127,26 @@ public struct GameRecord: Hashable, Sendable {
 
     public var appliedMoves: [PlayedMove] {
         Array(moves.prefix(currentMoveIndex))
+    }
+
+    public var currentNodeComment: String {
+        get {
+            guard currentMoveIndex > 0 else {
+                return rootComment
+            }
+
+            let path = Array(selectedLinePath.prefix(currentMoveIndex))
+            return node(at: path)?.comment ?? ""
+        }
+        set {
+            guard currentMoveIndex > 0 else {
+                rootComment = newValue
+                return
+            }
+
+            let path = Array(selectedLinePath.prefix(currentMoveIndex))
+            Self.updateNodeComment(&rootChildren, at: path, to: newValue)
+        }
     }
 
     public var moveListItems: [GameMoveListItem] {
@@ -288,5 +335,18 @@ public struct GameRecord: Hashable, Sendable {
         }
 
         return appendChild(&nodes[index].children, child, to: Array(path.dropFirst()))
+    }
+
+    private static func updateNodeComment(_ nodes: inout [GameTreeNode], at path: [Int], to comment: String) {
+        guard let index = path.first, nodes.indices.contains(index) else {
+            return
+        }
+
+        if path.count == 1 {
+            nodes[index].comment = comment
+            return
+        }
+
+        updateNodeComment(&nodes[index].children, at: Array(path.dropFirst()), to: comment)
     }
 }

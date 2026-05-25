@@ -122,6 +122,14 @@ private struct SidebarView: View {
                     .accessibilityIdentifier("gokan.metadata.result")
             }
 
+            Section("Current Node Comment") {
+                Label(currentNodeCommentTitle, systemImage: "note.text")
+                    .accessibilityIdentifier("gokan.current-node-comment-title")
+                TextEditor(text: currentNodeCommentBinding)
+                    .frame(minHeight: 80)
+                    .accessibilityIdentifier("gokan.current-node-comment")
+            }
+
             Section("Controls") {
                 Button {
                     model.newGame()
@@ -473,6 +481,23 @@ private struct SidebarView: View {
         if case .failure(let error) = result {
             model.documentError = error.localizedDescription
         }
+    }
+
+    private var currentNodeCommentTitle: String {
+        model.game.currentMoveIndex == 0
+            ? "Root position comment"
+            : "Move \(model.game.currentMoveIndex) comment"
+    }
+
+    private var currentNodeCommentBinding: Binding<String> {
+        Binding(
+            get: {
+                model.currentNodeComment
+            },
+            set: { newValue in
+                model.currentNodeComment = newValue
+            }
+        )
     }
 
     private func metadataBinding(_ keyPath: WritableKeyPath<GameMetadata, String>) -> Binding<String> {

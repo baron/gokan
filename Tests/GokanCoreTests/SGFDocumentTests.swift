@@ -94,6 +94,101 @@ func metadataValuesEscapeAndUnescapeSgfCharacters() throws {
 }
 
 @Test
+func parsesRootCommentIntoGameRecord() throws {
+    let document = try SGFDocument.parse("(;GM[1]FF[4]SZ[9]C[Root note];B[ee])")
+    let game = try document.gameRecord()
+
+    #expect(document.rootComment == "Root note")
+    #expect(game.rootComment == "Root note")
+    #expect(game.currentNodeComment.isEmpty)
+}
+
+@Test
+func parsesMoveCommentsIntoGameTree() throws {
+    let document = try SGFDocument.parse("(;GM[1]FF[4]SZ[9];B[ee]C[Black note];W[ef]C[White note])")
+    var game = try document.gameRecord()
+
+    #expect(game.currentNodeComment == "White note")
+
+    try game.stepBackward()
+
+    #expect(game.currentNodeComment == "Black note")
+}
+
+@Test
+func foldsCommentOnlyMainLineNodesIntoRepresentableComments() throws {
+    let document = try SGFDocument.parse("(;GM[1]FF[4]SZ[9];C[Root continuation];B[ee];C[Black follow-up];W[ef])")
+    var game = try document.gameRecord()
+
+    #expect(game.rootComment == "Root continuation")
+    #expect(game.currentNodeComment.isEmpty)
+
+    try game.stepBackward()
+
+    #expect(game.currentNodeComment == "Black follow-up")
+}
+
+@Test
+func foldsCommentOnlyVariationPrefixesIntoFirstBranchMove() throws {
+    let document = try SGFDocument.parse(
+        "(;GM[1]FF[4]SZ[9];B[ee](;C[First branch note];W[ef])(;C[Second branch note];W[ff]))"
+    )
+    var game = try document.gameRecord()
+
+    #expect(game.currentNodeComment == "First branch note")
+
+    try game.stepBackward()
+    try game.selectVariation(at: 1)
+
+    #expect(game.currentNodeComment == "Second branch note")
+}
+
+@Test
+func serializesRootAndMoveCommentsAsSgf() throws {
+    var game = GameRecord(boardSize: BoardSize(width: 9, height: 9), rootComment: "Root note")
+    try game.play(.play(BoardPoint(x: 4, y: 4)))
+    game.currentNodeComment = "Black note"
+
+    let sgf = try SGFDocument(game: game).serialize()
+
+    #expect(sgf == "(;GM[1]FF[4]CA[UTF-8]AP[Gokan]SZ[9]C[Root note];B[ee]C[Black note])\n")
+}
+
+@Test
+func commentValuesEscapeAndUnescapeSgfCharacters() throws {
+    var game = GameRecord(boardSize: BoardSize(width: 9, height: 9), rootComment: #"Root \ One ] Two"#)
+    try game.play(.play(BoardPoint(x: 4, y: 4)))
+    game.currentNodeComment = #"Move \ Three ] Four"#
+
+    let sgf = try SGFDocument(game: game).serialize()
+    let parsed = try SGFDocument.parse(sgf)
+    let parsedGame = try parsed.gameRecord()
+
+    #expect(
+        sgf == #"(;GM[1]FF[4]CA[UTF-8]AP[Gokan]SZ[9]C[Root \\ One \] Two];B[ee]C[Move \\ Three \] Four])"# + "\n"
+    )
+    #expect(parsed.rootComment == #"Root \ One ] Two"#)
+    #expect(parsedGame.rootChildren[0].comment == #"Move \ Three ] Four"#)
+}
+
+@Test
+func variationCommentsRoundTripWithBranches() throws {
+    let document = try SGFDocument.parse(
+        "(;GM[1]FF[4]SZ[9]C[Root];B[ee]C[Main](;W[ef]C[First branch])(;W[ff]C[Second branch]))"
+    )
+
+    let sgf = try document.serialize()
+    let reparsed = try SGFDocument.parse(sgf)
+
+    #expect(
+        sgf == "(;GM[1]FF[4]CA[UTF-8]AP[Gokan]SZ[9]C[Root];B[ee]C[Main](;W[ef]C[First branch])(;W[ff]C[Second branch]))\n"
+    )
+    #expect(reparsed.rootChildren[0].comment == "Main")
+    #expect(reparsed.rootChildren[0].children[0].comment == "First branch")
+    #expect(reparsed.rootChildren[0].children[1].comment == "Second branch")
+}
+
+@Test
 func parsesSimpleSgfIntoGameRecord() throws {
     let document = try SGFDocument.parse("(;GM[1]FF[4]SZ[9];B[ee];W[ef];B[])")
     let game = try document.gameRecord()
