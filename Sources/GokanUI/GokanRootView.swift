@@ -710,6 +710,7 @@ private struct BoardWorkspaceView: View {
                 selectedPoint: model.selectedPoint,
                 selectedCandidatePoint: model.selectedAnalysisCandidatePoint,
                 candidateMoves: model.analysis?.candidateMoves ?? [],
+                onSelectCandidate: model.selectAnalysisCandidate(_:),
                 onPlay: model.play(at:)
             )
             .padding()

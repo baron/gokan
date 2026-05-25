@@ -9,6 +9,7 @@ public struct GoBoardView: View {
     public let selectedPoint: BoardPoint?
     public let selectedCandidatePoint: BoardPoint?
     public let candidateMoves: [CandidateMove]
+    public let onSelectCandidate: (CandidateMove) -> Void
     public let onPlay: (BoardPoint) -> Void
 
     public init(
@@ -16,12 +17,14 @@ public struct GoBoardView: View {
         selectedPoint: BoardPoint? = nil,
         selectedCandidatePoint: BoardPoint? = nil,
         candidateMoves: [CandidateMove] = [],
+        onSelectCandidate: @escaping (CandidateMove) -> Void = { _ in },
         onPlay: @escaping (BoardPoint) -> Void
     ) {
         self.board = board
         self.selectedPoint = selectedPoint
         self.selectedCandidatePoint = selectedCandidatePoint
         self.candidateMoves = candidateMoves
+        self.onSelectCandidate = onSelectCandidate
         self.onPlay = onPlay
     }
 
@@ -67,6 +70,7 @@ public struct GoBoardView: View {
                         isSelected: selectedPoint == point,
                         isSelectedCandidate: selectedCandidatePoint == point,
                         spacing: spacing,
+                        onSelectCandidate: onSelectCandidate,
                         onPlay: onPlay
                     )
                     .position(
@@ -83,6 +87,23 @@ public struct GoBoardView: View {
     }
 }
 
+internal enum BoardIntersectionTapAction: Equatable {
+    case play(BoardPoint)
+    case selectCandidate(CandidateMove)
+}
+
+internal func boardIntersectionTapAction(
+    point: BoardPoint,
+    color: StoneColor?,
+    candidate: CandidateMove?
+) -> BoardIntersectionTapAction {
+    if let candidate, color == nil {
+        return .selectCandidate(candidate)
+    }
+
+    return .play(point)
+}
+
 private struct BoardIntersectionView: View {
     let point: BoardPoint
     let color: StoneColor?
@@ -90,11 +111,17 @@ private struct BoardIntersectionView: View {
     let isSelected: Bool
     let isSelectedCandidate: Bool
     let spacing: CGFloat
+    let onSelectCandidate: (CandidateMove) -> Void
     let onPlay: (BoardPoint) -> Void
 
     var body: some View {
         Button {
-            onPlay(point)
+            switch boardIntersectionTapAction(point: point, color: color, candidate: candidate) {
+            case .play(let point):
+                onPlay(point)
+            case .selectCandidate(let candidate):
+                onSelectCandidate(candidate)
+            }
         } label: {
             ZStack {
                 Circle()
