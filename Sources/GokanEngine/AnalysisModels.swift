@@ -5,17 +5,20 @@ import GokanCore
 
 public struct AnalysisRequest: Hashable, Sendable {
     public static let defaultVisits = 400
+    public static let defaultKomi = 6.5
 
     public let initialBoard: GoBoard
     public let board: GoBoard
     public let moves: [PlayedMove]
     public let nextPlayer: StoneColor
+    public let komi: Double
     public let visits: Int
 
     public init(
         board: GoBoard,
         moves: [PlayedMove],
         nextPlayer: StoneColor? = nil,
+        komi: Double = Self.defaultKomi,
         visits: Int = Self.defaultVisits
     ) {
         self.init(
@@ -23,6 +26,7 @@ public struct AnalysisRequest: Hashable, Sendable {
             board: board,
             moves: moves,
             nextPlayer: nextPlayer ?? moves.first?.color ?? .black,
+            komi: komi,
             visits: visits
         )
     }
@@ -32,13 +36,16 @@ public struct AnalysisRequest: Hashable, Sendable {
         board: GoBoard,
         moves: [PlayedMove],
         nextPlayer: StoneColor = .black,
+        komi: Double = Self.defaultKomi,
         visits: Int = Self.defaultVisits
     ) {
         precondition(initialBoard.size == board.size)
+        precondition(komi.isFinite)
         self.initialBoard = initialBoard
         self.board = board
         self.moves = moves
         self.nextPlayer = nextPlayer
+        self.komi = komi
         self.visits = visits
     }
 }

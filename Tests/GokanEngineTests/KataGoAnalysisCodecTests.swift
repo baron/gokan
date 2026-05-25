@@ -22,6 +22,7 @@ func codecEncodesAnalysisRequestAsJsonLine() throws {
     )
     #expect(object["id"] as? String == "request-1")
     #expect(object["rules"] as? String == "japanese")
+    #expect(object["komi"] as? Double == AnalysisRequest.defaultKomi)
     #expect(object["boardXSize"] as? Int == 9)
     #expect(object["boardYSize"] as? Int == 9)
     #expect(object["initialPlayer"] as? String == "B")
@@ -29,6 +30,21 @@ func codecEncodesAnalysisRequestAsJsonLine() throws {
 
     let moves = try #require(object["moves"] as? [[String]])
     #expect(moves == [["B", "E5"]])
+}
+
+@Test
+func codecEncodesCustomKomi() throws {
+    let board = GoBoard(size: BoardSize(width: 9, height: 9))
+
+    let data = try KataGoAnalysisCodec().encode(
+        AnalysisRequest(board: board, moves: [], komi: 7.5, visits: 100),
+        id: "custom-komi"
+    )
+    let object = try #require(
+        JSONSerialization.jsonObject(with: data) as? [String: Any]
+    )
+
+    #expect(object["komi"] as? Double == 7.5)
 }
 
 @Test

@@ -105,6 +105,39 @@ func analysisRequestIncludesInitialSetupBoard() async throws {
 
 @MainActor
 @Test
+func analysisRequestUsesSGFKomiMetadata() async throws {
+    let engine = RecordingAnalysisEngine()
+    let model = GokanAppModel(engine: engine)
+    model.loadSGFText("(;GM[1]FF[4]SZ[9]KM[7.5];B[ee])")
+
+    await model.analyze()
+
+    let request = try #require(engine.lastRequest)
+    #expect(request.komi == 7.5)
+}
+
+@MainActor
+@Test
+func analysisRequestDefaultsKomiWhenMetadataIsMissingOrInvalid() async throws {
+    let missingKomiEngine = RecordingAnalysisEngine()
+    let missingKomiModel = GokanAppModel(engine: missingKomiEngine)
+    missingKomiModel.loadSGFText("(;GM[1]FF[4]SZ[9];B[ee])")
+
+    await missingKomiModel.analyze()
+
+    #expect(missingKomiEngine.lastRequest?.komi == GokanAppModel.defaultAnalysisKomi)
+
+    let invalidKomiEngine = RecordingAnalysisEngine()
+    let invalidKomiModel = GokanAppModel(engine: invalidKomiEngine)
+    invalidKomiModel.loadSGFText("(;GM[1]FF[4]SZ[9]KM[not-a-number];B[ee])")
+
+    await invalidKomiModel.analyze()
+
+    #expect(invalidKomiEngine.lastRequest?.komi == GokanAppModel.defaultAnalysisKomi)
+}
+
+@MainActor
+@Test
 func rootSetupAnalysisRequestUsesCurrentSideToMove() async throws {
     let engine = RecordingAnalysisEngine()
     let model = GokanAppModel(engine: engine)
@@ -278,6 +311,54 @@ func editingGameMetadataUpdatesExportWithoutInvalidatingAnalysis() async throws 
     #expect(exported == "(;GM[1]FF[4]CA[UTF-8]AP[Gokan]SZ[9]PB[New Black]PW[White \\] Player]KM[6.5];B[ee])\n")
     #expect(model.sgfText.isEmpty)
     #expect(model.documentError == nil)
+    #expect(model.analysis == originalAnalysis)
+    #expect(model.analysisDiagnostics == originalDiagnostics)
+    #expect(model.selectedAnalysisCandidatePoint == candidatePoint)
+    #expect(model.positionVersion == originalPositionVersion)
+    #expect(model.analysisRequestVersion == originalAnalysisRequestVersion)
+}
+
+@MainActor
+@Test
+func editingKomiMetadataInvalidatesAnalysisRequest() async throws {
+    let candidatePoint = BoardPoint(x: 3, y: 3)
+    let model = GokanAppModel(engine: ScriptedAnalysisEngine(snapshots: [snapshot(with: [candidatePoint])]))
+    model.loadSGFText("(;GM[1]FF[4]SZ[9]KM[6.5];B[ee])")
+    await model.analyze()
+    _ = try #require(model.analysis)
+    _ = try #require(model.analysisDiagnostics)
+    let originalPositionVersion = model.positionVersion
+    let originalAnalysisRequestVersion = model.analysisRequestVersion
+
+    var metadata = model.gameMetadata
+    metadata.komi = "7.5"
+    model.gameMetadata = metadata
+
+    #expect(model.gameMetadata.komi == "7.5")
+    #expect(model.analysis == nil)
+    #expect(model.analysisDiagnostics == nil)
+    #expect(model.selectedAnalysisCandidatePoint == nil)
+    #expect(model.positionVersion == originalPositionVersion)
+    #expect(model.analysisRequestVersion == originalAnalysisRequestVersion + 1)
+}
+
+@MainActor
+@Test
+func editingEquivalentKomiMetadataDoesNotInvalidateAnalysisRequest() async throws {
+    let candidatePoint = BoardPoint(x: 3, y: 3)
+    let model = GokanAppModel(engine: ScriptedAnalysisEngine(snapshots: [snapshot(with: [candidatePoint])]))
+    model.loadSGFText("(;GM[1]FF[4]SZ[9]KM[6.5];B[ee])")
+    await model.analyze()
+    let originalAnalysis = try #require(model.analysis)
+    let originalDiagnostics = try #require(model.analysisDiagnostics)
+    let originalPositionVersion = model.positionVersion
+    let originalAnalysisRequestVersion = model.analysisRequestVersion
+
+    var metadata = model.gameMetadata
+    metadata.komi = "6.50"
+    model.gameMetadata = metadata
+
+    #expect(model.gameMetadata.komi == "6.50")
     #expect(model.analysis == originalAnalysis)
     #expect(model.analysisDiagnostics == originalDiagnostics)
     #expect(model.selectedAnalysisCandidatePoint == candidatePoint)

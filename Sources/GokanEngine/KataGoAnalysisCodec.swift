@@ -15,7 +15,7 @@ internal struct KataGoAnalysisCodec: Sendable {
         let payload = KataGoAnalysisRequestPayload(
             id: id,
             rules: "japanese",
-            komi: 6.5,
+            komi: request.komi,
             boardXSize: request.board.size.width,
             boardYSize: request.board.size.height,
             initialPlayer: colorCode(for: initialPlayer),

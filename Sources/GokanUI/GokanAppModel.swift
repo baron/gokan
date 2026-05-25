@@ -158,6 +158,7 @@ public typealias AnalysisEngineFactory = @Sendable (AnalysisEngineSelection) thr
 @Observable
 public final class GokanAppModel {
     public nonisolated static let defaultAnalysisVisits = AnalysisRequest.defaultVisits
+    public nonisolated static let defaultAnalysisKomi = AnalysisRequest.defaultKomi
     public nonisolated static let analysisVisitsRange = 1...10_000
     public nonisolated static let analysisVisitsStep = 100
 
@@ -309,10 +310,15 @@ public final class GokanAppModel {
                 return
             }
 
+            let previousAnalysisKomi = Self.analysisKomi(from: game.metadata.komi)
+            let nextAnalysisKomi = Self.analysisKomi(from: newValue.komi)
             game.metadata = newValue
             sgfText = ""
             exportedSGFText = ""
             documentError = nil
+            if previousAnalysisKomi != nextAnalysisKomi {
+                invalidateAnalysisAfterSettingsChange()
+            }
         }
     }
 
@@ -597,6 +603,7 @@ public final class GokanAppModel {
             board: currentGame.board,
             moves: currentGame.appliedMoves,
             nextPlayer: currentGame.nextPlayer,
+            komi: Self.analysisKomi(from: currentGame.metadata.komi),
             visits: requestedVisits
         )
         let runID = UUID()
@@ -742,6 +749,16 @@ public final class GokanAppModel {
         persistAnalysisSettings()
         refreshEngineStatus()
         invalidateAnalysisAfterSettingsChange()
+    }
+
+    private nonisolated static func analysisKomi(from metadataKomi: String) -> Double {
+        let trimmedKomi = metadataKomi.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedKomi.isEmpty == false,
+              let komi = Double(trimmedKomi),
+              komi.isFinite else {
+            return AnalysisRequest.defaultKomi
+        }
+        return komi
     }
 
     private func invalidateAnalysisAfterSettingsChange() {
