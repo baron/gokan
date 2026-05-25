@@ -195,7 +195,7 @@ func processTransportStartCancellationUnblocksReadinessWait() async throws {
         try await transport.start()
     }
 
-    try await waitForFile(at: pidURL)
+    let pid = try await waitForProcessIDFile(at: pidURL)
     startTask.cancel()
 
     do {
@@ -210,8 +210,6 @@ func processTransportStartCancellationUnblocksReadinessWait() async throws {
 
     let streamError = try await streamFailure(from: responses)
     #expect(streamError is CancellationError)
-    let pidText = try String(contentsOf: pidURL, encoding: .utf8)
-    let pid = try #require(Int32(pidText.trimmingCharacters(in: .whitespacesAndNewlines)))
     try await waitForProcessExit(pid)
     await transport.stop()
 }
@@ -300,6 +298,18 @@ private func streamFailure(from stream: AsyncThrowingStream<Data, Error>) async 
 private func waitForFile(at url: URL) async throws {
     try await withTimeout(seconds: 1) {
         while FileManager.default.fileExists(atPath: url.path) == false {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+    }
+}
+
+private func waitForProcessIDFile(at url: URL) async throws -> Int32 {
+    try await withTimeout(seconds: 1) {
+        while true {
+            if let pidText = try? String(contentsOf: url, encoding: .utf8),
+               let pid = Int32(pidText.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                return pid
+            }
             try await Task.sleep(nanoseconds: 20_000_000)
         }
     }

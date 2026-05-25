@@ -52,6 +52,34 @@ final class GokanSmokeUITests: XCTestCase {
     }
 
     @MainActor
+    func testNewGameFlowCreatesConfiguredGame() throws {
+        let app = XCUIApplication()
+        app.launchEnvironment["GOKAN_UI_TEST_FORCE_MOCK_ENGINE"] = "1"
+        app.launch()
+
+        let moveCount = app.staticTexts["gokan.move-count"]
+        XCTAssertTrue(moveCount.waitForExistence(timeout: 30))
+
+        let newGameButton = app.buttons["gokan.new-game.open"]
+        XCTAssertTrue(scrollUntilExists(newGameButton, in: app))
+        newGameButton.tap()
+
+        let boardSizeSegment = app.buttons["13x13"]
+        XCTAssertTrue(boardSizeSegment.waitForExistence(timeout: 10))
+        boardSizeSegment.tap()
+
+        let startButton = app.buttons["gokan.new-game.start"]
+        XCTAssertTrue(startButton.waitForExistence(timeout: 10))
+        startButton.tap()
+        XCTAssertFalse(app.descendants(matching: .any)["gokan.new-game.sheet"].waitForExistence(timeout: 5))
+
+        let boardSize = app.staticTexts["gokan.board-size"]
+        XCTAssertTrue(boardSize.waitForExistence(timeout: 10))
+        XCTAssertTrue(waitFor(boardSize, toContain: "13x13"))
+        XCTAssertTrue(waitFor(moveCount, toContain: "Move 0 / 0"))
+    }
+
+    @MainActor
     private func scrollUntilExists(_ element: XCUIElement, in app: XCUIApplication, attempts: Int = 6) -> Bool {
         if element.waitForExistence(timeout: 3) {
             return true

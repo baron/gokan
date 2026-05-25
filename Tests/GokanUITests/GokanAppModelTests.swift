@@ -29,6 +29,76 @@ func newGameResetsPositionAndDocumentState() throws {
 
 @MainActor
 @Test
+func newGameAppliesBoardSizeAndMetadataAtomically() async throws {
+    let candidatePoint = BoardPoint(x: 3, y: 3)
+    let model = GokanAppModel(engine: ScriptedAnalysisEngine(snapshots: [snapshot(with: [candidatePoint])]))
+    model.sgfText = "(;GM[1]FF[4]SZ[9];B[ee])"
+    model.documentError = "stale document error"
+    model.exportedSGFText = try model.exportSGFText()
+    model.play(at: candidatePoint)
+    await model.analyze()
+    _ = try #require(model.analysis)
+    _ = try #require(model.analysisDiagnostics)
+    let originalPositionVersion = model.positionVersion
+    let originalAnalysisRequestVersion = model.analysisRequestVersion
+    let metadata = GameMetadata(
+        blackPlayerName: "Black",
+        whitePlayerName: "White",
+        komi: "7.5",
+        result: "",
+        gameName: "Fresh game",
+        event: "Gokan test",
+        date: "2026-05-26"
+    )
+
+    model.newGame(boardSize: BoardSize(width: 13, height: 13), metadata: metadata)
+
+    #expect(model.game.board.size == BoardSize(width: 13, height: 13))
+    #expect(model.game.metadata == metadata)
+    #expect(model.game.moves.isEmpty)
+    #expect(model.game.currentMoveIndex == 0)
+    #expect(model.selectedPoint == nil)
+    #expect(model.analysis == nil)
+    #expect(model.analysisError == nil)
+    #expect(model.analysisDiagnostics == nil)
+    #expect(model.selectedAnalysisCandidatePoint == nil)
+    #expect(model.documentError == nil)
+    #expect(model.sgfText.isEmpty)
+    #expect(model.exportedSGFText.isEmpty)
+    #expect(model.positionVersion == originalPositionVersion + 1)
+    #expect(model.analysisRequestVersion == originalAnalysisRequestVersion + 1)
+}
+
+@MainActor
+@Test
+func analysisRequestUsesNewGameKomiMetadata() async throws {
+    let engine = RecordingAnalysisEngine()
+    let model = GokanAppModel(engine: engine)
+    let metadata = GameMetadata(komi: "7.5")
+
+    model.newGame(boardSize: BoardSize(width: 9, height: 9), metadata: metadata)
+    await model.analyze()
+
+    let request = try #require(engine.lastRequest)
+    #expect(request.board.size == BoardSize(width: 9, height: 9))
+    #expect(request.komi == 7.5)
+}
+
+@MainActor
+@Test
+func komiInputValidationAcceptsEmptyAndFiniteNumbers() {
+    #expect(GokanAppModel.isValidKomiInput(""))
+    #expect(GokanAppModel.isValidKomiInput("6.5"))
+    #expect(GokanAppModel.isValidKomiInput(" 7.5 "))
+    #expect(GokanAppModel.isValidKomiInput("0"))
+    #expect(GokanAppModel.isValidKomiInput("abc") == false)
+    #expect(GokanAppModel.isValidKomiInput("nan") == false)
+    #expect(GokanAppModel.isValidKomiInput("inf") == false)
+    #expect(GokanAppModel.isValidKomiInput(" 6.x ") == false)
+}
+
+@MainActor
+@Test
 func passAddsMoveAndFlipsNextPlayer() {
     let model = GokanAppModel(engine: SilentAnalysisEngine())
 

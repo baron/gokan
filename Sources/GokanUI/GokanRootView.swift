@@ -82,6 +82,8 @@ public struct GokanRootView: View {
 
 private struct SidebarView: View {
     @Bindable var model: GokanAppModel
+    @State private var isConfiguringNewGame = false
+    @State private var newGameDraft = NewGameDraft()
     @State private var isImportingSGF = false
     @State private var isImportingModelCatalog = false
     @State private var isExportingSGF = false
@@ -136,10 +138,12 @@ private struct SidebarView: View {
 
             Section("Controls") {
                 Button {
-                    model.newGame()
+                    newGameDraft = NewGameDraft()
+                    isConfiguringNewGame = true
                 } label: {
                     Label("New Game", systemImage: "doc.badge.plus")
                 }
+                .accessibilityIdentifier("gokan.new-game.open")
 
                 Button {
                     model.pass()
@@ -436,6 +440,24 @@ private struct SidebarView: View {
         }
         .navigationTitle("Gokan")
         .listStyle(.sidebar)
+        .sheet(isPresented: $isConfiguringNewGame) {
+            NewGameConfigurationView(
+                draft: $newGameDraft,
+                onCancel: {
+                    isConfiguringNewGame = false
+                },
+                onStart: { draft in
+                    guard draft.canStart else {
+                        return
+                    }
+                    model.newGame(
+                        boardSize: draft.boardSizeChoice.boardSize,
+                        metadata: draft.metadata
+                    )
+                    isConfiguringNewGame = false
+                }
+            )
+        }
         .fileImporter(
             isPresented: $isImportingSGF,
             allowedContentTypes: [.sgf, .plainText],
@@ -730,6 +752,131 @@ private struct SidebarView: View {
         }
 
         return String(format: "%.2f s", durationSeconds)
+    }
+}
+
+private enum NewGameBoardSizeChoice: Int, CaseIterable, Identifiable {
+    case nine = 9
+    case thirteen = 13
+    case nineteen = 19
+
+    var id: Int {
+        rawValue
+    }
+
+    var title: String {
+        "\(rawValue)x\(rawValue)"
+    }
+
+    var boardSize: BoardSize {
+        BoardSize(width: rawValue, height: rawValue)
+    }
+}
+
+private struct NewGameDraft: Equatable {
+    var boardSizeChoice: NewGameBoardSizeChoice = .nineteen
+    var gameName = ""
+    var event = ""
+    var date = ""
+    var blackPlayerName = ""
+    var whitePlayerName = ""
+    var komi = GokanAppModel.defaultKomiInputText
+    var result = ""
+
+    var metadata: GameMetadata {
+        GameMetadata(
+            blackPlayerName: trimmed(blackPlayerName),
+            whitePlayerName: trimmed(whitePlayerName),
+            komi: trimmed(komi),
+            result: trimmed(result),
+            gameName: trimmed(gameName),
+            event: trimmed(event),
+            date: trimmed(date)
+        )
+    }
+
+    var isKomiValid: Bool {
+        GokanAppModel.isValidKomiInput(komi)
+    }
+
+    var canStart: Bool {
+        isKomiValid
+    }
+
+    private func trimmed(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+private struct NewGameConfigurationView: View {
+    @Binding var draft: NewGameDraft
+    let onCancel: () -> Void
+    let onStart: (NewGameDraft) -> Void
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Board Size") {
+                    Picker("Board size", selection: $draft.boardSizeChoice) {
+                        ForEach(NewGameBoardSizeChoice.allCases) { choice in
+                            Text(choice.title)
+                                .tag(choice)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("gokan.new-game.board-size")
+                }
+
+                Section("Game Info") {
+                    TextField("Game name", text: $draft.gameName)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("gokan.new-game.metadata.game-name")
+                    TextField("Event", text: $draft.event)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("gokan.new-game.metadata.event")
+                    TextField("Date", text: $draft.date)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("gokan.new-game.metadata.date")
+                    TextField("Black player", text: $draft.blackPlayerName)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("gokan.new-game.metadata.black-player")
+                    TextField("White player", text: $draft.whitePlayerName)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("gokan.new-game.metadata.white-player")
+                    TextField("Result", text: $draft.result)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("gokan.new-game.metadata.result")
+                }
+
+                Section("Komi") {
+                    TextField("Komi", text: $draft.komi)
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("gokan.new-game.metadata.komi")
+                    if draft.isKomiValid == false {
+                        Label("Komi must be a finite number.", systemImage: "exclamationmark.triangle")
+                            .foregroundStyle(.orange)
+                            .accessibilityIdentifier("gokan.new-game.komi-validation")
+                    }
+                }
+            }
+            .navigationTitle("New Game")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel", role: .cancel) {
+                        onCancel()
+                    }
+                    .accessibilityIdentifier("gokan.new-game.cancel")
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Start") {
+                        onStart(draft)
+                    }
+                    .disabled(draft.canStart == false)
+                    .accessibilityIdentifier("gokan.new-game.start")
+                }
+            }
+            .accessibilityIdentifier("gokan.new-game.sheet")
+        }
     }
 }
 

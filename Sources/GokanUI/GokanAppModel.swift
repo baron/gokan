@@ -161,6 +161,9 @@ public final class GokanAppModel {
     public nonisolated static let defaultAnalysisKomi = AnalysisRequest.defaultKomi
     public nonisolated static let analysisVisitsRange = 1...10_000
     public nonisolated static let analysisVisitsStep = 100
+    nonisolated static var defaultKomiInputText: String {
+        String(defaultAnalysisKomi)
+    }
 
     public var game = GameRecord()
     public var selectedPoint: BoardPoint?
@@ -452,8 +455,8 @@ public final class GokanAppModel {
         }
     }
 
-    public func newGame(boardSize: BoardSize = .standard) {
-        game = GameRecord(boardSize: boardSize)
+    public func newGame(boardSize: BoardSize = .standard, metadata: GameMetadata = .empty) {
+        game = GameRecord(boardSize: boardSize, metadata: metadata)
         sgfText = ""
         exportedSGFText = ""
         positionDidChange(selectedPoint: nil, clearDocumentText: false)
@@ -759,6 +762,17 @@ public final class GokanAppModel {
             return AnalysisRequest.defaultKomi
         }
         return komi
+    }
+
+    nonisolated static func isValidKomiInput(_ value: String) -> Bool {
+        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedValue.isEmpty == false else {
+            return true
+        }
+        guard let komi = Double(trimmedValue) else {
+            return false
+        }
+        return komi.isFinite
     }
 
     private func invalidateAnalysisAfterSettingsChange() {
