@@ -467,6 +467,20 @@ func analysisRequestUsesDirectJumpPrefix() async {
 
 @MainActor
 @Test
+func analysisRequestUsesConfiguredVisits() async throws {
+    let engine = RecordingAnalysisEngine()
+    let model = GokanAppModel(engine: engine)
+
+    model.analysisVisits = 1_200
+    await model.analyze()
+
+    #expect(engine.lastRequest?.visits == 1_200)
+    let diagnostics = try #require(model.analysisDiagnostics)
+    #expect(diagnostics.requestedVisits == 1_200)
+}
+
+@MainActor
+@Test
 func successfulAnalysisRecordsDiagnostics() async throws {
     let finalPoint = BoardPoint(x: 4, y: 4)
     let engine = ScriptedAnalysisEngine(
@@ -698,6 +712,25 @@ func engineSettingChangeClearsAnalysisDiagnostics() async {
     model.engineKind = .kataGo
 
     #expect(model.analysisDiagnostics == nil)
+}
+
+@MainActor
+@Test
+func analysisVisitsChangeClearsStaleAnalysisAndIncrementsRequestVersion() async {
+    let model = GokanAppModel(engine: ScriptedAnalysisEngine(snapshots: [snapshot(with: [BoardPoint(x: 4, y: 4)])]))
+    await model.analyze()
+    model.analysisError = "old error"
+    let originalVersion = model.analysisRequestVersion
+
+    #expect(model.analysis != nil)
+    #expect(model.analysisDiagnostics != nil)
+
+    model.analysisVisits = 1_000
+
+    #expect(model.analysis == nil)
+    #expect(model.analysisError == nil)
+    #expect(model.analysisDiagnostics == nil)
+    #expect(model.analysisRequestVersion == originalVersion + 1)
 }
 
 @MainActor
@@ -1477,6 +1510,7 @@ func engineSettingsPersistAcrossModelInstances() throws {
 
     firstModel.engineKind = .kataGo
     firstModel.kataGoSettings = settings
+    firstModel.analysisVisits = 1_500
     let restoredModel = GokanAppModel(
         engine: SilentAnalysisEngine(),
         settingsDefaults: defaults.userDefaults,
@@ -1485,8 +1519,41 @@ func engineSettingsPersistAcrossModelInstances() throws {
 
     #expect(restoredModel.engineKind == .kataGo)
     #expect(restoredModel.kataGoSettings == settings)
+    #expect(restoredModel.analysisVisits == 1_500)
     #expect(restoredModel.engineStatus == .kataGoConfigured)
     #expect(restoredModel.analysisRequestVersion == 0)
+}
+
+@MainActor
+@Test
+func analysisVisitsClampToSupportedRange() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+
+    model.analysisVisits = 0
+    #expect(model.analysisVisits == GokanAppModel.analysisVisitsRange.lowerBound)
+
+    model.analysisVisits = 50_000
+    #expect(model.analysisVisits == GokanAppModel.analysisVisitsRange.upperBound)
+}
+
+@MainActor
+@Test
+func persistedAnalysisVisitsClampWithoutInvalidatingOnRestore() {
+    let lowDefaults = isolatedDefaults()
+    lowDefaults.userDefaults.set(0, forKey: "Gokan.analysis.visits")
+
+    let lowModel = GokanAppModel(engine: SilentAnalysisEngine(), settingsDefaults: lowDefaults.userDefaults)
+
+    #expect(lowModel.analysisVisits == GokanAppModel.analysisVisitsRange.lowerBound)
+    #expect(lowModel.analysisRequestVersion == 0)
+
+    let highDefaults = isolatedDefaults()
+    highDefaults.userDefaults.set(50_000, forKey: "Gokan.analysis.visits")
+
+    let highModel = GokanAppModel(engine: SilentAnalysisEngine(), settingsDefaults: highDefaults.userDefaults)
+
+    #expect(highModel.analysisVisits == GokanAppModel.analysisVisitsRange.upperBound)
+    #expect(highModel.analysisRequestVersion == 0)
 }
 
 @MainActor
@@ -1532,6 +1599,7 @@ func unknownPersistedEngineKindFallsBackToMock() {
 func nonPersistentInjectedModelsDoNotShareEngineSettings() {
     let firstModel = GokanAppModel(engine: SilentAnalysisEngine())
     firstModel.engineKind = .kataGo
+    firstModel.analysisVisits = 1_200
     firstModel.kataGoSettings = KataGoPathSettings(
         executablePath: "/usr/local/bin/katago",
         modelPath: "/models/g170.bin.gz",
@@ -1542,6 +1610,7 @@ func nonPersistentInjectedModelsDoNotShareEngineSettings() {
 
     #expect(secondModel.engineKind == .mock)
     #expect(secondModel.kataGoSettings == KataGoPathSettings())
+    #expect(secondModel.analysisVisits == GokanAppModel.defaultAnalysisVisits)
     #expect(secondModel.engineStatus == .mock)
 }
 

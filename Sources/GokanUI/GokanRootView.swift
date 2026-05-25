@@ -216,6 +216,15 @@ private struct SidebarView: View {
                 }
                 .accessibilityIdentifier("gokan.engine-picker")
 
+                Stepper(
+                    value: $model.analysisVisits,
+                    in: GokanAppModel.analysisVisitsRange,
+                    step: GokanAppModel.analysisVisitsStep
+                ) {
+                    Label("\(model.analysisVisits) visits", systemImage: "speedometer")
+                }
+                .accessibilityIdentifier("gokan.analysis-visits-control")
+
                 if model.engineKind == .kataGo {
                     #if os(macOS)
                     TextField("Executable path", text: $model.kataGoSettings.executablePath)

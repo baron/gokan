@@ -111,6 +111,7 @@ public enum KataGoModelStatus: Equatable, Sendable {
 
 private enum EngineSettingsDefaultsKey {
     static let engineKind = "Gokan.analysisEngine.kind"
+    static let analysisVisits = "Gokan.analysis.visits"
     static let executablePath = "Gokan.kataGo.executablePath"
     static let modelPath = "Gokan.kataGo.modelPath"
     static let configPath = "Gokan.kataGo.configPath"
@@ -156,6 +157,10 @@ public typealias AnalysisEngineFactory = @Sendable (AnalysisEngineSelection) thr
 @MainActor
 @Observable
 public final class GokanAppModel {
+    public nonisolated static let defaultAnalysisVisits = AnalysisRequest.defaultVisits
+    public nonisolated static let analysisVisitsRange = 1...10_000
+    public nonisolated static let analysisVisitsStep = 100
+
     public var game = GameRecord()
     public var selectedPoint: BoardPoint?
     public var analysis: AnalysisSnapshot? {
@@ -194,6 +199,14 @@ public final class GokanAppModel {
             engineSelectionDidChange()
         }
     }
+    public var analysisVisits: Int {
+        get {
+            analysisVisitsStorage
+        }
+        set {
+            setAnalysisVisits(newValue, persistAndInvalidate: true)
+        }
+    }
     public private(set) var engineStatus: EngineStatus = .mock
     public private(set) var kataGoModelStatus: KataGoModelStatus = .notSelected
     public private(set) var modelCatalog: GokanModelCatalog
@@ -202,7 +215,8 @@ public final class GokanAppModel {
     private let engineFactory: AnalysisEngineFactory
     private let settingsDefaults: UserDefaults?
     private let supportsKataGoSubprocess: Bool
-    private var isRestoringEngineSelection = false
+    private var isRestoringAnalysisSettings = false
+    private var analysisVisitsStorage = AnalysisRequest.defaultVisits
     private var modelCatalogVersion = 0
 
     public init(modelCatalog: GokanModelCatalog = .empty) {
@@ -211,7 +225,7 @@ public final class GokanAppModel {
         self.settingsDefaults = .standard
         self.supportsKataGoSubprocess = Self.defaultSupportsKataGoSubprocess
         restoreModelCatalog(from: .standard)
-        restoreEngineSelection(Self.loadPersistedEngineSelection(from: .standard))
+        restoreAnalysisSettings(from: .standard)
         refreshEngineStatus()
     }
 
@@ -227,7 +241,7 @@ public final class GokanAppModel {
         self.supportsKataGoSubprocess = supportsKataGoSubprocess ?? Self.defaultSupportsKataGoSubprocess
         if let settingsDefaults {
             restoreModelCatalog(from: settingsDefaults)
-            restoreEngineSelection(Self.loadPersistedEngineSelection(from: settingsDefaults))
+            restoreAnalysisSettings(from: settingsDefaults)
         }
         refreshEngineStatus()
     }
@@ -244,7 +258,7 @@ public final class GokanAppModel {
         self.supportsKataGoSubprocess = supportsKataGoSubprocess ?? Self.defaultSupportsKataGoSubprocess
         if let settingsDefaults {
             restoreModelCatalog(from: settingsDefaults)
-            restoreEngineSelection(Self.loadPersistedEngineSelection(from: settingsDefaults))
+            restoreAnalysisSettings(from: settingsDefaults)
         }
         refreshEngineStatus()
     }
@@ -561,7 +575,8 @@ public final class GokanAppModel {
         let version = positionVersion
         let analysisVersion = analysisRequestVersion
         let currentGame = game
-        let request = AnalysisRequest(board: currentGame.board, moves: currentGame.appliedMoves)
+        let requestedVisits = analysisVisits
+        let request = AnalysisRequest(board: currentGame.board, moves: currentGame.appliedMoves, visits: requestedVisits)
         let runID = UUID()
         let startedAt = Date()
         analysisDiagnostics = AnalysisRunDiagnostics(
@@ -570,7 +585,7 @@ public final class GokanAppModel {
             boardSize: currentGame.board.size,
             moveIndex: currentGame.currentMoveIndex,
             moveCount: currentGame.moves.count,
-            requestedVisits: request.visits,
+            requestedVisits: requestedVisits,
             startedAt: startedAt
         )
 
@@ -698,12 +713,16 @@ public final class GokanAppModel {
     }
 
     private func engineSelectionDidChange() {
-        guard isRestoringEngineSelection == false else {
+        guard isRestoringAnalysisSettings == false else {
             return
         }
 
-        persistEngineSelection()
+        persistAnalysisSettings()
         refreshEngineStatus()
+        invalidateAnalysisAfterSettingsChange()
+    }
+
+    private func invalidateAnalysisAfterSettingsChange() {
         analysis = nil
         analysisError = nil
         analysisDiagnostics = nil
@@ -832,10 +851,7 @@ public final class GokanAppModel {
             return
         }
 
-        analysis = nil
-        analysisError = nil
-        analysisDiagnostics = nil
-        analysisRequestVersion += 1
+        invalidateAnalysisAfterSettingsChange()
     }
 
     private func updateEngineStatus(with resolution: KataGoConfigurationResolution) {
@@ -872,20 +888,39 @@ public final class GokanAppModel {
         }
     }
 
-    private func restoreEngineSelection(_ selection: AnalysisEngineSelection) {
-        isRestoringEngineSelection = true
+    private func restoreAnalysisSettings(from defaults: UserDefaults) {
+        let selection = Self.loadPersistedEngineSelection(from: defaults)
+        isRestoringAnalysisSettings = true
         engineKind = selection.kind
         kataGoSettings = selection.kataGoSettings
         kataGoModelSettings = selection.kataGoModelSettings
-        isRestoringEngineSelection = false
+        setAnalysisVisits(Self.loadPersistedAnalysisVisits(from: defaults), persistAndInvalidate: false)
+        isRestoringAnalysisSettings = false
     }
 
-    private func persistEngineSelection() {
+    private func setAnalysisVisits(_ visits: Int, persistAndInvalidate: Bool) {
+        let normalizedVisits = Self.normalizedAnalysisVisits(visits)
+        guard normalizedVisits != analysisVisitsStorage else {
+            return
+        }
+
+        analysisVisitsStorage = normalizedVisits
+        guard persistAndInvalidate,
+              isRestoringAnalysisSettings == false else {
+            return
+        }
+
+        persistAnalysisSettings()
+        invalidateAnalysisAfterSettingsChange()
+    }
+
+    private func persistAnalysisSettings() {
         guard let settingsDefaults else {
             return
         }
 
         settingsDefaults.set(engineKind.rawValue, forKey: EngineSettingsDefaultsKey.engineKind)
+        settingsDefaults.set(analysisVisits, forKey: EngineSettingsDefaultsKey.analysisVisits)
         settingsDefaults.set(kataGoSettings.executablePath, forKey: EngineSettingsDefaultsKey.executablePath)
         settingsDefaults.set(kataGoSettings.modelPath, forKey: EngineSettingsDefaultsKey.modelPath)
         settingsDefaults.set(kataGoSettings.configPath, forKey: EngineSettingsDefaultsKey.configPath)
@@ -906,6 +941,18 @@ public final class GokanAppModel {
             cacheRootPath: defaults.string(forKey: EngineSettingsDefaultsKey.modelCacheRootPath) ?? ""
         )
         return AnalysisEngineSelection(kind: kind, kataGoSettings: settings, kataGoModelSettings: modelSettings)
+    }
+
+    private nonisolated static func loadPersistedAnalysisVisits(from defaults: UserDefaults) -> Int {
+        guard defaults.object(forKey: EngineSettingsDefaultsKey.analysisVisits) != nil else {
+            return defaultAnalysisVisits
+        }
+
+        return normalizedAnalysisVisits(defaults.integer(forKey: EngineSettingsDefaultsKey.analysisVisits))
+    }
+
+    private nonisolated static func normalizedAnalysisVisits(_ visits: Int) -> Int {
+        min(max(visits, analysisVisitsRange.lowerBound), analysisVisitsRange.upperBound)
     }
 
     private func currentAnalysisEngineSelection() -> AnalysisEngineSelection {

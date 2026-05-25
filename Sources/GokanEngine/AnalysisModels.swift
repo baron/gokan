@@ -4,11 +4,13 @@ import Foundation
 import GokanCore
 
 public struct AnalysisRequest: Hashable, Sendable {
+    public static let defaultVisits = 400
+
     public let board: GoBoard
     public let moves: [PlayedMove]
     public let visits: Int
 
-    public init(board: GoBoard, moves: [PlayedMove], visits: Int = 400) {
+    public init(board: GoBoard, moves: [PlayedMove], visits: Int = Self.defaultVisits) {
         self.board = board
         self.moves = moves
         self.visits = visits
