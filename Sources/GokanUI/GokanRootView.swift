@@ -96,6 +96,10 @@ private struct SidebarView: View {
                     .accessibilityIdentifier("gokan.move-count")
                 Label("\(model.game.nextPlayer.rawValue.capitalized) to play", systemImage: "circle.lefthalf.filled")
                     .accessibilityIdentifier("gokan.next-player")
+                if setupStoneCount > 0 {
+                    Label("\(setupStoneCount) setup stones", systemImage: "circle.grid.cross")
+                        .accessibilityIdentifier("gokan.setup-stones")
+                }
             }
 
             Section("Game Info") {
@@ -487,6 +491,10 @@ private struct SidebarView: View {
         model.game.currentMoveIndex == 0
             ? "Root position comment"
             : "Move \(model.game.currentMoveIndex) comment"
+    }
+
+    private var setupStoneCount: Int {
+        model.game.initialBoard.occupiedPoints.count
     }
 
     private var currentNodeCommentBinding: Binding<String> {

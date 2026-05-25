@@ -7,11 +7,19 @@ public enum SGFDocumentError: Error, Equatable, Sendable {
     case unsupportedGame
     case invalidBoardSize
     case invalidSyntax
+    case invalidSetupStone(property: String, value: String)
+    case duplicateSetupStone(BoardPoint)
+    case unsupportedSetupProperty(String)
     case illegalMove(moveNumber: Int, BoardError)
 }
 
 public struct SGFDocument: Hashable, Sendable {
-    public var boardSize: BoardSize
+    public private(set) var boardSize: BoardSize
+    public var initialBoard: GoBoard {
+        didSet {
+            boardSize = initialBoard.size
+        }
+    }
     public var rootChildren: [GameTreeNode]
     public var metadata: GameMetadata
     public var rootComment: String
@@ -30,10 +38,26 @@ public struct SGFDocument: Hashable, Sendable {
         metadata: GameMetadata = .empty,
         rootComment: String
     ) {
-        self.boardSize = boardSize
-        self.rootChildren = Self.chain(from: moves.map { ParsedMoveNode(move: $0) })
-        self.metadata = metadata
-        self.rootComment = rootComment
+        self.init(
+            initialBoard: GoBoard(size: boardSize),
+            moves: moves,
+            metadata: metadata,
+            rootComment: rootComment
+        )
+    }
+
+    public init(
+        initialBoard: GoBoard,
+        moves: [PlayedMove] = [],
+        metadata: GameMetadata = .empty,
+        rootComment: String = ""
+    ) {
+        self.init(
+            initialBoard: initialBoard,
+            rootChildren: Self.chain(from: moves.map { ParsedMoveNode(move: $0) }),
+            metadata: metadata,
+            rootComment: rootComment
+        )
     }
 
     public init(
@@ -50,14 +74,30 @@ public struct SGFDocument: Hashable, Sendable {
         metadata: GameMetadata = .empty,
         rootComment: String
     ) {
-        self.boardSize = boardSize
+        self.init(
+            initialBoard: GoBoard(size: boardSize),
+            rootChildren: rootChildren,
+            metadata: metadata,
+            rootComment: rootComment
+        )
+    }
+
+    public init(
+        initialBoard: GoBoard,
+        rootChildren: [GameTreeNode],
+        metadata: GameMetadata = .empty,
+        rootComment: String = ""
+    ) {
+        self.boardSize = initialBoard.size
+        self.initialBoard = initialBoard
         self.rootChildren = rootChildren
         self.metadata = metadata
         self.rootComment = rootComment
     }
 
     public init(game: GameRecord) {
-        self.boardSize = game.board.size
+        self.boardSize = game.initialBoard.size
+        self.initialBoard = game.initialBoard
         self.rootChildren = game.rootChildren
         self.metadata = game.metadata
         self.rootComment = game.rootComment
@@ -70,16 +110,22 @@ public struct SGFDocument: Hashable, Sendable {
     public func gameRecord() throws -> GameRecord {
         try validate(
             nodes: rootChildren,
-            from: GoBoard(size: boardSize),
+            from: initialBoard,
             simpleKoReferenceBoard: nil,
             expectedPlayer: nil,
             moveNumber: 1
         )
-        return try GameRecord(boardSize: boardSize, rootChildren: rootChildren, metadata: metadata, rootComment: rootComment)
+        return try GameRecord(
+            initialBoard: initialBoard,
+            rootChildren: rootChildren,
+            metadata: metadata,
+            rootComment: rootComment
+        )
     }
 
     public func serialize() throws -> String {
         var output = "(;GM[1]FF[4]CA[UTF-8]AP[Gokan]SZ[\(serializedBoardSize)]"
+        output += try serializeSetupStones()
         output += serializeMetadata()
         output += serializeComment(rootComment)
         output += try serializeChildren(rootChildren)
@@ -103,8 +149,9 @@ public struct SGFDocument: Hashable, Sendable {
         }
 
         let size = try parseBoardSize(from: tree.properties.first(where: { $0.identifier == "SZ" })?.values.first)
+        try rejectSetupPropertiesOutsideRoot(in: tree)
         let document = SGFDocument(
-            boardSize: size,
+            initialBoard: try initialBoard(from: tree.rootProperties, boardSize: size),
             rootChildren: try nodes(from: tree, isTopLevel: true),
             metadata: metadata(from: tree.rootProperties),
             rootComment: rootComment(from: tree)
@@ -127,6 +174,65 @@ public struct SGFDocument: Hashable, Sendable {
 
     private static func rootValue(_ identifier: String, in properties: [SGFProperty]) -> String {
         properties.first { $0.identifier == identifier }?.values.first ?? ""
+    }
+
+    private static func initialBoard(from rootProperties: [SGFProperty], boardSize: BoardSize) throws -> GoBoard {
+        var stones: [BoardPoint: StoneColor] = [:]
+
+        if let property = rootProperties.first(where: { $0.identifier == "AE" || $0.identifier == "PL" }) {
+            throw SGFDocumentError.unsupportedSetupProperty(property.identifier)
+        }
+
+        for property in rootProperties where property.identifier == "AB" || property.identifier == "AW" {
+            guard property.values.isEmpty == false else {
+                throw SGFDocumentError.invalidSetupStone(property: property.identifier, value: "")
+            }
+
+            let color: StoneColor = property.identifier == "AB" ? .black : .white
+            for value in property.values {
+                guard value.isEmpty == false else {
+                    throw SGFDocumentError.invalidSetupStone(property: property.identifier, value: value)
+                }
+
+                let point: BoardPoint
+                do {
+                    point = try SGFCoordinates.decode(value)
+                } catch {
+                    throw SGFDocumentError.invalidSetupStone(property: property.identifier, value: value)
+                }
+
+                guard boardSize.contains(point) else {
+                    throw SGFDocumentError.invalidSetupStone(property: property.identifier, value: value)
+                }
+                guard stones[point] == nil else {
+                    throw SGFDocumentError.duplicateSetupStone(point)
+                }
+
+                stones[point] = color
+            }
+        }
+
+        return GoBoard(size: boardSize, stones: stones)
+    }
+
+    private static func rejectSetupPropertiesOutsideRoot(in tree: ParsedSGFTree) throws {
+        try rejectSetupProperties(in: Array(tree.nodes.dropFirst()))
+        for variation in tree.variations {
+            try rejectSetupProperties(in: variation.nodes)
+            try rejectSetupPropertiesOutsideRoot(in: variation)
+        }
+    }
+
+    private static func rejectSetupProperties(in nodes: [[SGFProperty]]) throws {
+        for properties in nodes {
+            if let property = properties.first(where: isSetupProperty) {
+                throw SGFDocumentError.unsupportedSetupProperty(property.identifier)
+            }
+        }
+    }
+
+    private static func isSetupProperty(_ property: SGFProperty) -> Bool {
+        property.identifier == "AB" || property.identifier == "AW" || property.identifier == "AE" || property.identifier == "PL"
     }
 
     private static func rootComment(from tree: ParsedSGFTree) -> String {
@@ -374,6 +480,25 @@ public struct SGFDocument: Hashable, Sendable {
         }
 
         return "C[\(escapedPropertyValue(comment))]"
+    }
+
+    private func serializeSetupStones() throws -> String {
+        let blackPoints = initialBoard.occupiedPoints.filter { initialBoard[$0] == .black }
+        let whitePoints = initialBoard.occupiedPoints.filter { initialBoard[$0] == .white }
+
+        return try [
+            serializeSetupStones(blackPoints, property: "AB"),
+            serializeSetupStones(whitePoints, property: "AW"),
+        ].joined()
+    }
+
+    private func serializeSetupStones(_ points: [BoardPoint], property: String) throws -> String {
+        guard points.isEmpty == false else {
+            return ""
+        }
+
+        let values = try points.map { "[\(try SGFCoordinates.encode($0))]" }.joined()
+        return "\(property)\(values)"
     }
 
     private func escapedPropertyValue(_ value: String) -> String {

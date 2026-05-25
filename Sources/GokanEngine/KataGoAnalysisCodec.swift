@@ -7,16 +7,19 @@ internal struct KataGoAnalysisCodec: Sendable {
     init() {}
 
     func encode(_ request: AnalysisRequest, id: String) throws -> Data {
-        let replayedBoard = try? boardByReplaying(request.moves, size: request.board.size)
+        let replayedBoard = try? boardByReplaying(request.moves, from: request.initialBoard)
         let shouldUseMoves = replayedBoard == request.board
+        let initialPlayer = shouldUseMoves
+            ? (request.moves.first?.color ?? request.nextPlayer)
+            : request.nextPlayer
         let payload = KataGoAnalysisRequestPayload(
             id: id,
             rules: "japanese",
             komi: 6.5,
             boardXSize: request.board.size.width,
             boardYSize: request.board.size.height,
-            initialPlayer: "B",
-            initialStones: shouldUseMoves ? [] : try initialStones(from: request.board),
+            initialPlayer: colorCode(for: initialPlayer),
+            initialStones: try initialStones(from: shouldUseMoves ? request.initialBoard : request.board),
             moves: shouldUseMoves ? try request.moves.map { move in
                 [
                     colorCode(for: move.color),
@@ -84,8 +87,8 @@ internal struct KataGoAnalysisCodec: Sendable {
         }
     }
 
-    private func boardByReplaying(_ moves: [PlayedMove], size: BoardSize) throws -> GoBoard {
-        try moves.reduce(GoBoard(size: size)) { board, playedMove in
+    private func boardByReplaying(_ moves: [PlayedMove], from initialBoard: GoBoard) throws -> GoBoard {
+        try moves.reduce(initialBoard) { board, playedMove in
             switch playedMove.move {
             case .play(let point):
                 try board.placing(playedMove.color, at: point)

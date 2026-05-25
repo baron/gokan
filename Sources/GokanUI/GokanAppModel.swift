@@ -592,7 +592,13 @@ public final class GokanAppModel {
         let analysisVersion = analysisRequestVersion
         let currentGame = game
         let requestedVisits = analysisVisits
-        let request = AnalysisRequest(board: currentGame.board, moves: currentGame.appliedMoves, visits: requestedVisits)
+        let request = AnalysisRequest(
+            initialBoard: currentGame.initialBoard,
+            board: currentGame.board,
+            moves: currentGame.appliedMoves,
+            nextPlayer: currentGame.nextPlayer,
+            visits: requestedVisits
+        )
         let runID = UUID()
         let startedAt = Date()
         analysisDiagnostics = AnalysisRunDiagnostics(

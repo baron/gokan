@@ -66,6 +66,7 @@ public struct GameMoveListItem: Hashable, Sendable, Identifiable {
 }
 
 public struct GameRecord: Hashable, Sendable {
+    public private(set) var initialBoard: GoBoard
     public private(set) var board: GoBoard
     public private(set) var nextPlayer: StoneColor
     public private(set) var currentMoveIndex: Int
@@ -85,7 +86,20 @@ public struct GameRecord: Hashable, Sendable {
         metadata: GameMetadata = .empty,
         rootComment: String
     ) {
-        self.board = GoBoard(size: boardSize)
+        self.init(
+            initialBoard: GoBoard(size: boardSize),
+            metadata: metadata,
+            rootComment: rootComment
+        )
+    }
+
+    public init(
+        initialBoard: GoBoard,
+        metadata: GameMetadata = .empty,
+        rootComment: String = ""
+    ) {
+        self.initialBoard = initialBoard
+        self.board = initialBoard
         self.nextPlayer = .black
         self.currentMoveIndex = 0
         self.rootChildren = []
@@ -109,7 +123,22 @@ public struct GameRecord: Hashable, Sendable {
         metadata: GameMetadata = .empty,
         rootComment: String
     ) throws {
-        self.board = GoBoard(size: boardSize)
+        try self.init(
+            initialBoard: GoBoard(size: boardSize),
+            rootChildren: rootChildren,
+            metadata: metadata,
+            rootComment: rootComment
+        )
+    }
+
+    public init(
+        initialBoard: GoBoard,
+        rootChildren: [GameTreeNode],
+        metadata: GameMetadata = .empty,
+        rootComment: String = ""
+    ) throws {
+        self.initialBoard = initialBoard
+        self.board = initialBoard
         self.nextPlayer = .black
         self.currentMoveIndex = 0
         self.rootChildren = rootChildren
@@ -238,7 +267,7 @@ public struct GameRecord: Hashable, Sendable {
     }
 
     private mutating func refreshReviewedPosition() throws {
-        var rebuiltBoard = GoBoard(size: board.size)
+        var rebuiltBoard = initialBoard
         var rebuiltSimpleKoReferenceBoard: GoBoard?
         var expectedPlayer: StoneColor?
 

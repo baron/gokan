@@ -24,6 +24,7 @@ func codecEncodesAnalysisRequestAsJsonLine() throws {
     #expect(object["rules"] as? String == "japanese")
     #expect(object["boardXSize"] as? Int == 9)
     #expect(object["boardYSize"] as? Int == 9)
+    #expect(object["initialPlayer"] as? String == "B")
     #expect(object["maxVisits"] as? Int == 123)
 
     let moves = try #require(object["moves"] as? [[String]])
@@ -49,6 +50,108 @@ func codecEncodesNonReplayableBoardAsInitialStones() throws {
     let moves = try #require(object["moves"] as? [[String]])
     #expect(initialStones == [["B", "E5"]])
     #expect(moves.isEmpty)
+}
+
+@Test
+func codecEncodesSetupStonesAndPostSetupMoves() throws {
+    let initialBoard = GoBoard(
+        size: BoardSize(width: 9, height: 9),
+        stones: [
+            BoardPoint(x: 2, y: 2): .black,
+            BoardPoint(x: 6, y: 6): .black,
+            BoardPoint(x: 4, y: 4): .white,
+        ]
+    )
+    let move = PlayedMove(color: .white, move: .play(BoardPoint(x: 4, y: 5)))
+    let finalBoard = try initialBoard.placing(.white, at: BoardPoint(x: 4, y: 5))
+
+    let data = try KataGoAnalysisCodec().encode(
+        AnalysisRequest(initialBoard: initialBoard, board: finalBoard, moves: [move], visits: 100),
+        id: "setup-with-move"
+    )
+    let object = try #require(
+        JSONSerialization.jsonObject(with: data) as? [String: Any]
+    )
+
+    let initialStones = try #require(object["initialStones"] as? [[String]])
+    let moves = try #require(object["moves"] as? [[String]])
+    #expect(initialStones == [["B", "C7"], ["W", "E5"], ["B", "G3"]])
+    #expect(moves == [["W", "E4"]])
+}
+
+@Test
+func codecPreservesMoveHistoryWhenPostSetupMoveCaptures() throws {
+    let initialBoard = GoBoard(
+        size: BoardSize(width: 5, height: 5),
+        stones: [
+            BoardPoint(x: 1, y: 1): .black,
+            BoardPoint(x: 0, y: 1): .white,
+            BoardPoint(x: 1, y: 0): .white,
+            BoardPoint(x: 2, y: 1): .white,
+        ]
+    )
+    let move = PlayedMove(color: .white, move: .play(BoardPoint(x: 1, y: 2)))
+    let finalBoard = try initialBoard.placing(.white, at: BoardPoint(x: 1, y: 2))
+
+    #expect(finalBoard[BoardPoint(x: 1, y: 1)] == nil)
+
+    let data = try KataGoAnalysisCodec().encode(
+        AnalysisRequest(initialBoard: initialBoard, board: finalBoard, moves: [move], visits: 100),
+        id: "setup-capture"
+    )
+    let object = try #require(
+        JSONSerialization.jsonObject(with: data) as? [String: Any]
+    )
+
+    let initialStones = try #require(object["initialStones"] as? [[String]])
+    let moves = try #require(object["moves"] as? [[String]])
+    #expect(Set(initialStones.map { $0.joined(separator: ":") }) == Set(["W:B5", "W:A4", "B:B4", "W:C4"]))
+    #expect(moves == [["W", "B3"]])
+}
+
+@Test
+func codecEncodesRequestedSideToMoveForSetupRootAnalysis() throws {
+    let initialBoard = GoBoard(
+        size: BoardSize(width: 9, height: 9),
+        stones: [BoardPoint(x: 2, y: 2): .black]
+    )
+
+    let data = try KataGoAnalysisCodec().encode(
+        AnalysisRequest(
+            initialBoard: initialBoard,
+            board: initialBoard,
+            moves: [],
+            nextPlayer: .white,
+            visits: 100
+        ),
+        id: "white-to-play"
+    )
+    let object = try #require(
+        JSONSerialization.jsonObject(with: data) as? [String: Any]
+    )
+
+    #expect(object["initialPlayer"] as? String == "W")
+    #expect(try #require(object["moves"] as? [[String]]).isEmpty)
+}
+
+@Test
+func codecFallbackUsesRequestedSideToMoveWhenDroppingUnreplayableMoves() throws {
+    let board = GoBoard(
+        size: BoardSize(width: 9, height: 9),
+        stones: [BoardPoint(x: 4, y: 4): .black]
+    )
+    let staleMove = PlayedMove(color: .black, move: .play(BoardPoint(x: 0, y: 0)))
+
+    let data = try KataGoAnalysisCodec().encode(
+        AnalysisRequest(board: board, moves: [staleMove], nextPlayer: .white, visits: 100),
+        id: "fallback-white"
+    )
+    let object = try #require(
+        JSONSerialization.jsonObject(with: data) as? [String: Any]
+    )
+
+    #expect(object["initialPlayer"] as? String == "W")
+    #expect(try #require(object["moves"] as? [[String]]).isEmpty)
 }
 
 @Test

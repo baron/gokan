@@ -114,6 +114,39 @@ func goToStartLeavesEmptyBoardAndFirstMovePlayer() throws {
 }
 
 @Test
+func goToStartRestoresInitialSetupBoard() throws {
+    let setupPoint = BoardPoint(x: 2, y: 2)
+    let initialBoard = GoBoard(
+        size: BoardSize(width: 9, height: 9),
+        stones: [setupPoint: .black]
+    )
+    var game = GameRecord(initialBoard: initialBoard)
+    try game.play(.play(BoardPoint(x: 4, y: 4)))
+
+    try game.goToStart()
+
+    #expect(game.currentMoveIndex == 0)
+    #expect(game.initialBoard == initialBoard)
+    #expect(game.board[setupPoint] == .black)
+    #expect(game.board[BoardPoint(x: 4, y: 4)] == nil)
+}
+
+@Test
+func setupBoardOccupiedPointsAreIllegalMoves() throws {
+    let occupiedPoint = BoardPoint(x: 2, y: 2)
+    var game = GameRecord(
+        initialBoard: GoBoard(
+            size: BoardSize(width: 9, height: 9),
+            stones: [occupiedPoint: .black]
+        )
+    )
+
+    #expect(throws: BoardError.occupiedPoint) {
+        try game.play(.play(occupiedPoint))
+    }
+}
+
+@Test
 func goToEndRestoresFinalBoard() throws {
     var game = GameRecord(boardSize: BoardSize(width: 9, height: 9))
     try game.play(.play(BoardPoint(x: 4, y: 4)))

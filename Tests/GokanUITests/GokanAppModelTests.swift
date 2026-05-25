@@ -74,6 +74,54 @@ func loadSGFTextReplacesCurrentGameTransactionally() {
 
 @MainActor
 @Test
+func loadingSGFTextExposesSetupStones() {
+    let model = GokanAppModel(engine: SilentAnalysisEngine())
+
+    model.loadSGFText("(;GM[1]FF[4]SZ[9]AB[cc]AW[ee];W[ef])")
+
+    #expect(model.game.initialBoard[BoardPoint(x: 2, y: 2)] == .black)
+    #expect(model.game.initialBoard[BoardPoint(x: 4, y: 4)] == .white)
+    #expect(model.game.board[BoardPoint(x: 2, y: 2)] == .black)
+    #expect(model.game.board[BoardPoint(x: 4, y: 4)] == .white)
+    #expect(model.game.board[BoardPoint(x: 4, y: 5)] == .white)
+    #expect(model.documentError == nil)
+}
+
+@MainActor
+@Test
+func analysisRequestIncludesInitialSetupBoard() async throws {
+    let engine = RecordingAnalysisEngine()
+    let model = GokanAppModel(engine: engine)
+    model.loadSGFText("(;GM[1]FF[4]SZ[9]AB[cc]AW[ee];W[ef])")
+
+    await model.analyze()
+
+    let request = try #require(engine.lastRequest)
+    #expect(request.initialBoard[BoardPoint(x: 2, y: 2)] == .black)
+    #expect(request.initialBoard[BoardPoint(x: 4, y: 4)] == .white)
+    #expect(request.board[BoardPoint(x: 4, y: 5)] == .white)
+    #expect(request.moves == model.game.appliedMoves)
+}
+
+@MainActor
+@Test
+func rootSetupAnalysisRequestUsesCurrentSideToMove() async throws {
+    let engine = RecordingAnalysisEngine()
+    let model = GokanAppModel(engine: engine)
+    model.loadSGFText("(;GM[1]FF[4]SZ[9]AB[cc];W[ef])")
+    model.goToFirstMove()
+
+    await model.analyze()
+
+    let request = try #require(engine.lastRequest)
+    #expect(model.game.currentMoveIndex == 0)
+    #expect(model.game.nextPlayer == .white)
+    #expect(request.moves.isEmpty)
+    #expect(request.nextPlayer == .white)
+}
+
+@MainActor
+@Test
 func loadSGFTextReportsErrorAndPreservesCurrentGame() {
     let model = GokanAppModel(engine: SilentAnalysisEngine())
     model.play(at: BoardPoint(x: 0, y: 0))

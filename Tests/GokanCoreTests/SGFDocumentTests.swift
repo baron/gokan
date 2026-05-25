@@ -201,6 +201,93 @@ func parsesSimpleSgfIntoGameRecord() throws {
 }
 
 @Test
+func parsesRootSetupStonesIntoInitialBoard() throws {
+    let document = try SGFDocument.parse("(;GM[1]FF[4]SZ[9]AB[cc][gg]AW[ee];W[ef])")
+    var game = try document.gameRecord()
+
+    #expect(document.initialBoard[BoardPoint(x: 2, y: 2)] == .black)
+    #expect(document.initialBoard[BoardPoint(x: 6, y: 6)] == .black)
+    #expect(document.initialBoard[BoardPoint(x: 4, y: 4)] == .white)
+    #expect(game.initialBoard == document.initialBoard)
+    #expect(game.board[BoardPoint(x: 4, y: 5)] == .white)
+
+    try game.goToStart()
+
+    #expect(game.board == document.initialBoard)
+}
+
+@Test
+func serializesRootSetupStonesBeforeMetadataAndComments() throws {
+    let document = SGFDocument(
+        initialBoard: GoBoard(
+            size: BoardSize(width: 9, height: 9),
+            stones: [
+                BoardPoint(x: 2, y: 2): .black,
+                BoardPoint(x: 6, y: 6): .black,
+                BoardPoint(x: 4, y: 4): .white,
+            ]
+        ),
+        rootChildren: [
+            GameTreeNode(playedMove: PlayedMove(color: .white, move: .play(BoardPoint(x: 4, y: 5))))
+        ],
+        metadata: GameMetadata(gameName: "Setup"),
+        rootComment: "Root note"
+    )
+
+    let sgf = try document.serialize()
+    let parsed = try SGFDocument.parse(sgf)
+
+    #expect(sgf == "(;GM[1]FF[4]CA[UTF-8]AP[Gokan]SZ[9]AB[cc][gg]AW[ee]GN[Setup]C[Root note];W[ef])\n")
+    #expect(parsed.initialBoard == document.initialBoard)
+    #expect(parsed.metadata == document.metadata)
+    #expect(parsed.rootComment == document.rootComment)
+    #expect(parsed.moves.map(\.color) == document.moves.map(\.color))
+    #expect(parsed.moves.map(\.move) == document.moves.map(\.move))
+}
+
+@Test
+func rejectsDuplicateRootSetupStones() throws {
+    #expect(throws: SGFDocumentError.duplicateSetupStone(BoardPoint(x: 2, y: 2))) {
+        _ = try SGFDocument.parse("(;GM[1]FF[4]SZ[9]AB[cc]AW[cc])")
+    }
+}
+
+@Test
+func rejectsUnsupportedSetupStonesOutsideRoot() throws {
+    #expect(throws: SGFDocumentError.unsupportedSetupProperty("AB")) {
+        _ = try SGFDocument.parse("(;GM[1]FF[4]SZ[9];B[ee]AB[cc])")
+    }
+}
+
+@Test
+func rejectsRootSetupRemovalsUntilNodeEditingIsSupported() throws {
+    #expect(throws: SGFDocumentError.unsupportedSetupProperty("AE")) {
+        _ = try SGFDocument.parse("(;GM[1]FF[4]SZ[9]AE[cc])")
+    }
+}
+
+@Test
+func rejectsSetupPlayerUntilTurnStateIsSupported() throws {
+    #expect(throws: SGFDocumentError.unsupportedSetupProperty("PL")) {
+        _ = try SGFDocument.parse("(;GM[1]FF[4]SZ[9]AB[cc]PL[W])")
+    }
+}
+
+@Test
+func rejectsCompressedRootSetupPointListsUntilExpansionIsSupported() throws {
+    #expect(throws: SGFDocumentError.invalidSetupStone(property: "AB", value: "aa:cc")) {
+        _ = try SGFDocument.parse("(;GM[1]FF[4]SZ[9]AB[aa:cc])")
+    }
+}
+
+@Test
+func rejectsSetupPropertiesInsideVariations() throws {
+    #expect(throws: SGFDocumentError.unsupportedSetupProperty("AW")) {
+        _ = try SGFDocument.parse("(;GM[1]FF[4]SZ[9];B[ee](;W[ef])(;AW[cc];W[ff]))")
+    }
+}
+
+@Test
 func serializesFullGameRecordWhileReviewingEarlierMove() throws {
     var game = try SGFDocument.parse("(;GM[1]FF[4]SZ[9];B[ee];W[ef])").gameRecord()
     try game.stepBackward()

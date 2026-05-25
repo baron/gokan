@@ -17,6 +17,8 @@ headers, and release materials.
 - Native SwiftUI app for iOS, iPadOS, and macOS.
 - Shared Swift package for board state, SGF parsing, engine orchestration, model
   catalog metadata import, and app settings.
+- SGF import/export preserves game trees, metadata, node comments, and root
+  setup stones for handicap or composed starting positions.
 - KataGo integrated as a separately tracked engine fork, preserving upstream
   license notices.
 - Apple Silicon performance work focused first on the existing KataGo Metal

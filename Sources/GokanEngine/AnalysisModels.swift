@@ -6,13 +6,39 @@ import GokanCore
 public struct AnalysisRequest: Hashable, Sendable {
     public static let defaultVisits = 400
 
+    public let initialBoard: GoBoard
     public let board: GoBoard
     public let moves: [PlayedMove]
+    public let nextPlayer: StoneColor
     public let visits: Int
 
-    public init(board: GoBoard, moves: [PlayedMove], visits: Int = Self.defaultVisits) {
+    public init(
+        board: GoBoard,
+        moves: [PlayedMove],
+        nextPlayer: StoneColor? = nil,
+        visits: Int = Self.defaultVisits
+    ) {
+        self.init(
+            initialBoard: GoBoard(size: board.size),
+            board: board,
+            moves: moves,
+            nextPlayer: nextPlayer ?? moves.first?.color ?? .black,
+            visits: visits
+        )
+    }
+
+    public init(
+        initialBoard: GoBoard,
+        board: GoBoard,
+        moves: [PlayedMove],
+        nextPlayer: StoneColor = .black,
+        visits: Int = Self.defaultVisits
+    ) {
+        precondition(initialBoard.size == board.size)
+        self.initialBoard = initialBoard
         self.board = board
         self.moves = moves
+        self.nextPlayer = nextPlayer
         self.visits = visits
     }
 }
