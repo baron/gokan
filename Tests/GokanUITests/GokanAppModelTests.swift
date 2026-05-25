@@ -86,6 +86,24 @@ func analysisRequestUsesNewGameKomiMetadata() async throws {
 
 @MainActor
 @Test
+func staticScoreEstimateUsesCurrentBoardAndKomiMetadata() throws {
+    let model = GokanAppModel(engine: MockAnalysisEngine())
+    model.newGame(boardSize: BoardSize(width: 3, height: 3), metadata: GameMetadata(komi: "7.5"))
+    try model.game.play(.play(BoardPoint(x: 0, y: 1)))
+    try model.game.play(.play(BoardPoint(x: 2, y: 1)))
+
+    let estimate = model.staticScoreEstimate
+
+    #expect(estimate.blackStones == 1)
+    #expect(estimate.whiteStones == 1)
+    #expect(estimate.neutralPoints == 7)
+    #expect(estimate.komi == 7.5)
+    #expect(estimate.whiteAreaScore == 8.5)
+    #expect(estimate.scoreLead == -7.5)
+}
+
+@MainActor
+@Test
 func komiInputValidationAcceptsEmptyAndFiniteNumbers() {
     #expect(GokanAppModel.isValidKomiInput(""))
     #expect(GokanAppModel.isValidKomiInput("6.5"))

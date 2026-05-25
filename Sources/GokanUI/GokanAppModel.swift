@@ -304,6 +304,13 @@ public final class GokanAppModel {
             && trimmed(kataGoModelSettings.cacheRootPath).isEmpty == false
     }
 
+    public var staticScoreEstimate: ScoreEstimate {
+        GoScorer.estimate(
+            board: game.board,
+            komi: Self.analysisKomi(from: game.metadata.komi)
+        )
+    }
+
     public var gameMetadata: GameMetadata {
         get {
             game.metadata

@@ -104,6 +104,8 @@ private struct SidebarView: View {
                 }
             }
 
+            StaticScoreSection(estimate: model.staticScoreEstimate)
+
             Section("Game Info") {
                 TextField("Game name", text: metadataBinding(\.gameName))
                     .textFieldStyle(.roundedBorder)
@@ -752,6 +754,51 @@ private struct SidebarView: View {
         }
 
         return String(format: "%.2f s", durationSeconds)
+    }
+}
+
+private struct StaticScoreSection: View {
+    let estimate: ScoreEstimate
+
+    var body: some View {
+        Section("Area Estimate") {
+            Label(scoreLeadTitle, systemImage: "plus.forwardslash.minus")
+                .accessibilityIdentifier("gokan.static-score-lead")
+            Label(areaScoreTitle, systemImage: "sum")
+                .accessibilityIdentifier("gokan.static-area-score")
+            Label(territoryTitle, systemImage: "square.grid.3x3")
+                .accessibilityIdentifier("gokan.static-territory")
+            Label("Neutral \(estimate.neutralPoints)", systemImage: "circle.dotted")
+                .accessibilityIdentifier("gokan.static-neutral-points")
+            Label(komiTitle, systemImage: "scalemass")
+                .accessibilityIdentifier("gokan.static-komi")
+        }
+    }
+
+    private var scoreLeadTitle: String {
+        if estimate.scoreLead > 0 {
+            return "Black +\(scoreNumber(estimate.scoreLead))"
+        }
+        if estimate.scoreLead < 0 {
+            return "White +\(scoreNumber(abs(estimate.scoreLead)))"
+        }
+        return "Even"
+    }
+
+    private var areaScoreTitle: String {
+        "Area B \(scoreNumber(estimate.blackAreaScore)) / W \(scoreNumber(estimate.whiteAreaScore))"
+    }
+
+    private var territoryTitle: String {
+        "Territory B \(estimate.blackTerritory) / W \(estimate.whiteTerritory)"
+    }
+
+    private var komiTitle: String {
+        "Komi \(scoreNumber(estimate.komi))"
+    }
+
+    private func scoreNumber(_ value: Double) -> String {
+        String(format: "%.1f", value)
     }
 }
 
